@@ -3,6 +3,8 @@ package top.mcfpp.core.lang
 import top.mcfpp.Project
 import top.mcfpp.annotations.InsertCommand
 import top.mcfpp.command.Commands
+import top.mcfpp.core.lang.bool.MCBool
+import top.mcfpp.core.lang.bool.MCBoolConcrete
 import top.mcfpp.exception.VariableConverseException
 import top.mcfpp.type.MCFPPBaseType
 import top.mcfpp.type.MCFPPType
@@ -92,7 +94,7 @@ open class MCFloat : MCNumber<Float> {
      */
     @Override
     @Throws(VariableConverseException::class)
-    override fun doAssign(b: Var<*>) : MCFloat {
+    override fun doAssignedBy(b: Var<*>) : MCFloat {
         return when (b) {
             is MCFloat -> {
                 assignCommand(b)
@@ -105,12 +107,16 @@ open class MCFloat : MCNumber<Float> {
         }
     }
 
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        return !b.implicitCast(type).isError
+    }
+
     /**
      * 赋值
      * @param a 值来源
      */
     @InsertCommand
-    override fun assignCommand(a: MCNumber<Float>) : MCFloat {
+    override fun assignCommand(a: MCNumber<*>) : MCFloat {
         val parent = parent
         if(a.parent != null) TODO()
         if(parent != null){
@@ -355,11 +361,11 @@ open class MCFloat : MCNumber<Float> {
         if(!r.isError) return r
         return when(type){
             MCFPPBaseType.Int -> {
-                ssObj.assign(this)
+                ssObj.assignedBy(this)
                 Function.addCommand("function math:hpo/float/_toscore")
                 val temp = MCInt("res")
                 val re = MCInt()
-                re.assign(temp)
+                re.assignedBy(temp)
                 re
             }
             else -> r
@@ -400,7 +406,9 @@ open class MCFloat : MCNumber<Float> {
 
     companion object{
 
-        val data = CompoundData("float","mcfpp")
+        val data by lazy {
+            CompoundData("float","mcfpp")
+        }
 
         const val tempFloatEntityUUID = "53aa19cc-a067-402b-8ba1-9328cc5fb6c1"
         const val tempFloatEntityUUIDNBT = "[I;1403656652,-1603846101,-1952345304,-866142527]"
@@ -436,7 +444,7 @@ open class MCFloat : MCNumber<Float> {
         fun ssObjToVar(identifier: String = UUID.randomUUID().toString()) : MCFloat{
             val re = MCFloat(identifier)
             re.isTemp = true
-            re.assign(ssObj)
+            re.assignedBy(ssObj)
             return re
         }
     }

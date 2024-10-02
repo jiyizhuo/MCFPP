@@ -3,9 +3,9 @@ package top.mcfpp.core.lang
 import net.querz.nbt.io.SNBTUtil
 import net.querz.nbt.tag.StringTag
 import top.mcfpp.Project
+import top.mcfpp.annotations.InsertCommand
 import top.mcfpp.command.Command
 import top.mcfpp.command.Commands
-import top.mcfpp.exception.OperationNotImplementException
 import top.mcfpp.exception.VariableConverseException
 import top.mcfpp.type.MCFPPBaseType
 import top.mcfpp.type.MCFPPNBTType
@@ -33,7 +33,7 @@ import java.util.*
  *态的字符串和原始JSON文本功能。
  *
  */
-open class MCString : NBTBasedData<StringTag> {
+open class MCString : NBTBasedData {
 
     override var type: MCFPPType = MCFPPBaseType.String
 
@@ -75,19 +75,72 @@ open class MCString : NBTBasedData<StringTag> {
         TODO("Not yet implemented")
     }
 
-    override fun getByIndex(index: Var<*>): Accessor {
-        throw OperationNotImplementException()
-    }
-
     @Override
     @Throws(VariableConverseException::class)
-    override fun doAssign(b: Var<*>): MCString {
+    override fun doAssignedBy(b: Var<*>): MCString {
         when (b) {
-            is MCString -> return assignCommand(b) as MCString
+            is MCString -> return assignCommand(b)
             else -> LogProcessor.error(TextTranslator.ASSIGN_ERROR.translate(b.type.typeName, type.typeName))
         }
         return this
     }
+
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        return !b.implicitCast(type).isError
+    }
+
+    @InsertCommand
+    override fun assignCommand(a: NBTBasedData) : MCString{
+        nbtType = a.nbtType
+        return assignCommandLambda(a,
+            ifThisIsClassMemberAndAIsConcrete = {b, final ->
+                b as MCStringConcrete
+                //对类中的成员的值进行修改
+                if(final.size == 2){
+                    Function.addCommand(final[0])
+                }
+                final.last().build(Commands.dataSetValue(nbtPath, b.value))
+                if(final.last().isMacro){
+                    Function.addCommands(final.last().buildMacroFunction())
+                }else{
+                    Function.addCommand(final.last())
+                }
+                MCString(this)
+            },
+            ifThisIsClassMemberAndAIsNotConcrete = {b, final ->
+                //对类中的成员的值进行修改
+                if(final.size == 2){
+                    Function.addCommand(final[0])
+                }
+                final.last().build(Commands.dataSetFrom(nbtPath, b.nbtPath))
+                if(final.last().isMacro){
+                    Function.addCommands(final.last().buildMacroFunction())
+                }else{
+                    Function.addCommand(final.last())
+                }
+                MCString(this)
+            },
+            ifThisIsNormalVarAndAIsConcrete = {b, _ ->
+                MCStringConcrete(this, (b as MCStringConcrete).value)
+            },
+            ifThisIsNormalVarAndAIsClassMember = {b, final ->
+                if(final.size == 2){
+                    Function.addCommand(final[0])
+                }
+                final.last().build(Commands.dataSetFrom(nbtPath, b.nbtPath))
+                if(final.last().isMacro){
+                    Function.addCommands(final.last().buildMacroFunction())
+                }else{
+                    Function.addCommand(final.last())
+                }
+                MCString(this)
+            },
+            ifThisIsNormalVarAndAIsNotConcrete = {b, _ ->
+                Function.addCommand(Commands.dataSetFrom(nbtPath, b.nbtPath))
+                NBTBasedData(this)
+            }) as MCString
+    }
+
 
     companion object {
         val data = CompoundData("string","mcfpp")
@@ -120,6 +173,10 @@ class MCStringConcrete: MCString, MCFPPValue<StringTag> {
      * @param value 值
      */
     constructor(value: StringTag, identifier: String = UUID.randomUUID().toString()) : super(identifier) {
+        this.value = value
+    }
+
+    constructor(v: MCString, value: StringTag): super(v){
         this.value = value
     }
 

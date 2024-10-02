@@ -3,6 +3,7 @@ package top.mcfpp.core.lang
 import net.querz.nbt.tag.CompoundTag
 import net.querz.nbt.tag.StringTag
 import net.querz.nbt.tag.Tag
+import top.mcfpp.core.lang.bool.MCBoolConcrete
 import top.mcfpp.exception.OperationNotImplementException
 import top.mcfpp.model.*
 import top.mcfpp.model.function.Function
@@ -68,7 +69,7 @@ class JavaVar : Var<JavaVar>, MCFPPValue<Any?> {
      * 将b中的值赋值给此变量
      * @param b 变量的对象
      */
-    override fun doAssign(b: Var<*>): JavaVar {
+    override fun doAssignedBy(b: Var<*>): JavaVar {
         when (b) {
             is JavaVar -> {
                 this.value = b.value
@@ -79,6 +80,10 @@ class JavaVar : Var<JavaVar>, MCFPPValue<Any?> {
             }
         }
         return this
+    }
+
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        return !b.implicitCast(type).isError
     }
 
     override fun clone(): JavaVar {
@@ -185,7 +190,9 @@ class JavaVar : Var<JavaVar>, MCFPPValue<Any?> {
 
     companion object{
 
-        val data = CompoundData("JavaVar","mcfpp")
+        val data by lazy {
+            CompoundData("JavaVar","mcfpp")
+        }
 
         fun mcToJava(v : Var<*>) : Any{
             if(v !is MCFPPValue<*>){
@@ -196,10 +203,10 @@ class JavaVar : Var<JavaVar>, MCFPPValue<Any?> {
                 is MCFloatConcrete -> v.value
                 is MCBoolConcrete -> v.value
                 is MCStringConcrete -> v.value.valueToString()
-                is NBTListConcrete<*> -> v.value.toJava()
+                is NBTListConcrete -> v.value.toJava()
                 is NBTMapConcrete -> (v.value["data"] as CompoundTag).toJava()
                 is NBTDictionaryConcrete -> v.value.toJava()
-                is NBTBasedDataConcrete<*> -> v.value
+                is NBTBasedDataConcrete -> v.value
                 else -> v
             }!!
         }

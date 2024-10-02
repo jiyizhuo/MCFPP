@@ -3,6 +3,7 @@ package top.mcfpp.core.lang
 import top.mcfpp.annotations.InsertCommand
 import top.mcfpp.command.Command
 import top.mcfpp.command.Commands
+import top.mcfpp.model.accessor.SimpleAccessor
 import top.mcfpp.exception.VariableConverseException
 import top.mcfpp.type.MCFPPClassType
 import top.mcfpp.type.MCFPPType
@@ -21,21 +22,19 @@ import top.mcfpp.util.TextTranslator.translate
 import java.util.*
 
 /**
- * 一个类的指针。类的地址储存在记分板中，因此一个类的指针实际上包含了两个信息，一个是指针代表的是[哪一个类][clazz]，一个是指针指向的这个类的对象
- *[在堆中的地址][address]，即记分板的值是多少。
+ * 一个类的指针。类的地址储存在storage的uuid中中，因此一个类的指针实际上包含了两个信息，一个是指针代表的是[哪一个类][clazz]，一个是指针指向的这个类的对象
+ *在堆中的地址，即nbt uuid的值是多少。
  *
  * 指针继承于类[Var]，然而它的[name]并没有额外的用处，因为我们并不需要关注这个指针处于哪一个类或者哪一个函数中。起到标识符作用的更多是[identifier]。
  * 事实上，指针的[name]和[identifier]拥有相同的值。
  *
- * 创建一个类的对象的时候，在分配完毕类的地址之后，将会立刻创建一个初始指针，这个指针指向了刚刚创建的对象的地址，在记分板上的名字是一个随机的uuid。
+ * 创建一个类的对象的时候，在分配完毕类的地址之后，将会立刻创建一个初始指针，这个指针指向了刚刚创建的对象的地址。
  * 而后进行的引用操作无非是把这个初始指针的记分板值赋给其他的指针。
  *
- * TODO 空指针
- *
  * @see Class 类的核心实现
- * @see top.mcfpp.core.lang.type.MCFPPClassType 表示类的类型，同时也是类的静态成员的指针
+ * @see top.mcfpp.type.MCFPPClassType 表示类的类型，同时也是类的静态成员的指针
  */
-class ClassPointer : Var<ClassPointer>{
+open class ClassPointer : Var<ClassPointer>{
 
     /**
      * 指针对应的类的类型
@@ -99,7 +98,7 @@ class ClassPointer : Var<ClassPointer>{
     @Override
     @InsertCommand
     @Throws(VariableConverseException::class)
-    override fun doAssign(b: Var<*>): ClassPointer {
+    override fun doAssignedBy(b: Var<*>): ClassPointer {
         //TODO 不支持指针作为类成员的时候
         when (b) {
             is ClassPointer -> {
@@ -129,13 +128,22 @@ class ClassPointer : Var<ClassPointer>{
                     Commands.sbPlayerAdd(MCInt("@s").setObj(SbObject.MCFPP_POINTER_COUNTER) as MCInt, 1)
                 )
                 Function.addCommands(c)
+                return ClassPointerConcrete(b.clazz, this)
             }
 
             else -> {
                 LogProcessor.error(TextTranslator.ASSIGN_ERROR.translate(b.type.typeName, type.typeName))
+                return this
             }
         }
-        return this
+    }
+
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        if(!b.implicitCast(type).isError) return true
+        return when (b) {
+            is ClassPointer -> true
+            else -> false
+        }
     }
 
     /**
@@ -184,11 +192,11 @@ class ClassPointer : Var<ClassPointer>{
      */
     @Override
     override fun getMemberVar(key: String, accessModifier: Member.AccessModifier): Pair<Var<*>?, Boolean> {
-        val member = instanceField.getVar(key)
+        val member = instanceField.getProperty(key)
         return if(member == null){
             Pair(null, true)
         }else{
-            Pair(Accessor(member), accessModifier >= member.accessModifier)
+            Pair(PropertyVar(member, this), accessModifier >= member.accessModifier)
         }
     }
 
@@ -246,5 +254,22 @@ class ClassPointer : Var<ClassPointer>{
         const val tempItemEntityUUID = "810d6071-f121-4972-80d6-60cc19b40cf8"
         const val tempItemEntityUUIDNBT = "[I;-2129829775,-249476750,-2133434164,431230200]"
 
+    }
+}
+
+class ClassPointerConcrete: ClassPointer, MCFPPValue<Class>{
+
+    override lateinit var value: Class
+
+    constructor(clazz: Class, container: FieldContainer, identifier: String): super(clazz, container, identifier)
+
+    constructor(clazz: Class, identifier: String): super(clazz, identifier)
+
+    constructor(value: Class , classPointer: ClassPointer) : super(classPointer) {
+        this.value = value
+    }
+
+    override fun toDynamic(replace: Boolean): Var<*> {
+        return ClassPointer(this)
     }
 }

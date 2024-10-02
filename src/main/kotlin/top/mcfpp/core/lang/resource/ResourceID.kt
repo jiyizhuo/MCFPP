@@ -13,7 +13,7 @@ import top.mcfpp.util.LogProcessor
 import top.mcfpp.type.MCFPPResourceType
 import java.util.*
 
-open class ResourceID : NBTBasedData<StringTag> {
+open class ResourceID : NBTBasedData {
 
     override var type: MCFPPType = MCFPPResourceType.ResourceID
 
@@ -53,6 +53,14 @@ open class ResourceID : NBTBasedData<StringTag> {
         }
     }
 
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        if (!b.implicitCast(type).isError) return true
+        if(b is ResourceID){
+            return true
+        }
+        return false
+    }
+
     companion object {
         val data = CompoundData("ResourceID","mcfpp.lang.resource")
 
@@ -65,7 +73,7 @@ open class ResourceID : NBTBasedData<StringTag> {
 
 open class ResourceIDConcrete: MCFPPValue<String>, ResourceID{
 
-    override var value: String
+    override lateinit var value: String
 
     constructor(
         curr: FieldContainer,

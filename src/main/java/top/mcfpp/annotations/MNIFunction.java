@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 @Target({ElementType.METHOD})
 @Retention(RetentionPolicy.RUNTIME)
-public @interface MNIRegister {
+public @interface MNIFunction {
 
     /**
      * 只读参数。格式是类型+空格+参数名
@@ -33,5 +33,10 @@ public @interface MNIRegister {
      * 是否重写了父类中的函数。默认为false
      */
     boolean override() default false;
+
+    /**
+     * 是否是单例对象
+     */
+    boolean isObject() default false;
 
 }

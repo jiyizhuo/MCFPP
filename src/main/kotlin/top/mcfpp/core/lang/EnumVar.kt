@@ -8,9 +8,11 @@ import top.mcfpp.type.MCFPPBaseType
 import top.mcfpp.type.MCFPPType
 import top.mcfpp.lib.SbObject
 import top.mcfpp.model.Enum
+import top.mcfpp.model.EnumMember
 import top.mcfpp.model.FieldContainer
 import top.mcfpp.model.Member
 import top.mcfpp.model.function.Function
+import top.mcfpp.model.function.UnknownFunction
 import top.mcfpp.util.LogProcessor
 import top.mcfpp.util.TextTranslator
 import top.mcfpp.util.TextTranslator.translate
@@ -59,13 +61,29 @@ open class EnumVar : Var<EnumVar> {
         type = enum.getType()
     }
 
-    override fun doAssign(b: Var<*>): EnumVar {
+    override fun doAssignedBy(b: Var<*>): EnumVar {
         return when(b){
             is EnumVar -> {
-                val i = this.getIntVar().assign(b.getIntVar()) as MCInt
-                if(i is MCIntConcrete) EnumVarConcrete(i, enum)
-                else EnumVar(i, enum)
+                if(b.enum != enum){
+                    LogProcessor.error("Enum type not match: ${b.enum.identifier}(${b.enum.namespaceID}) and ${enum.identifier}(${enum.namespaceID})")
+                    return this
+                }
+                val i = this.asIntVar().assignedBy(b.asIntVar()) as MCInt
+                if(i is MCIntConcrete) {
+                    val member = enum.getMember(i.value)
+                    if(member == null){
+                        LogProcessor.error("Enum member not found: ${i.value}")
+                        return this
+                    }
+                    asNBTVar().assignedBy(NBTBasedDataConcrete(member.data))    //nbt赋值
+                    EnumVarConcrete(this, i.value)
+                }
+                else {
+                    asNBTVar().assignedBy(b.asNBTVar())    //nbt赋值
+                    this
+                }
             }
+
             is MCStringConcrete -> {
                 val value = b.value.value
                 val member = enum.members[value]
@@ -82,6 +100,13 @@ open class EnumVar : Var<EnumVar> {
         }
     }
 
+
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        if(!b.implicitCast(type).isError) return true
+        if(b is MCStringConcrete) return true
+        return false
+    }
+
     override fun clone(): EnumVar {
         return EnumVar(this)
     }
@@ -90,28 +115,24 @@ open class EnumVar : Var<EnumVar> {
         if (isTemp) return this
         val re = EnumVar(enum)
         re.isTemp = true
-        return re.assign(this)
+        return re.assignedBy(this)
     }
 
     override fun storeToStack() {
-        if(parent != null) return
-        Function.addCommand(
-            Command("execute store result")
-                .build(nbtPath.toCommandPart())
-                .build("int 1 run scoreboard players get $name ${SbObject.MCFPP_default}")
-        )
+        //什么都不用做哦
     }
 
     override fun getFromStack() {
-        if(parent != null) return
-        Function.addCommand(
-            Command("execute store result score $name ${SbObject.MCFPP_default} run data get")
-                .build(nbtPath.toCommandPart())
-        )
+        //什么都不用做哦
     }
 
     override fun getMemberVar(key: String, accessModifier: Member.AccessModifier): Pair<Var<*>?, Boolean> {
-        TODO("Not yet implemented")
+        return when(key){
+            "identifier" -> MCString("identifier").apply { nbtPath = this@EnumVar.nbtPath.memberIndex("identifier") } to true
+            "value" -> MCInt("value").apply { nbtPath = this@EnumVar.nbtPath.memberIndex("value")} to true
+            "data" -> NBTBasedData("data").apply { nbtPath = this@EnumVar.nbtPath.memberIndex("data")} to true
+            else -> null to true
+        }
     }
 
     override fun getMemberFunction(
@@ -120,17 +141,21 @@ open class EnumVar : Var<EnumVar> {
         normalParams: List<MCFPPType>,
         accessModifier: Member.AccessModifier
     ): Pair<Function, Boolean> {
-        TODO("Not yet implemented")
+        return UnknownFunction(key) to true
     }
 
-    open fun getIntVar(): MCInt{
+    open fun asIntVar(): MCInt{
         return MCInt(this)
+    }
+
+    open fun asNBTVar(): NBTBasedData{
+        return NBTBasedData(this)
     }
 }
 
-class EnumVarConcrete : EnumVar, MCFPPValue<Int> {
+class EnumVarConcrete : EnumVar, MCFPPValue<EnumMember> {
 
-    override var value: Int
+    override lateinit var value: EnumMember
 
     /**
      * 创建一个固定的int
@@ -145,7 +170,7 @@ class EnumVarConcrete : EnumVar, MCFPPValue<Int> {
         value: Int,
         identifier: String = UUID.randomUUID().toString()
     ) : super(enum, curr.prefix + identifier) {
-        this.value = value
+        this.value = enum.getMember(value)!!
     }
 
     /**
@@ -154,19 +179,15 @@ class EnumVarConcrete : EnumVar, MCFPPValue<Int> {
      * @param value 值
      */
     constructor(enum: Enum, value: Int, identifier: String = UUID.randomUUID().toString()) : super(enum ,identifier) {
-        this.value = value
+        this.value = enum.getMember(value)!!
     }
 
     constructor(enum: EnumVar, value: Int) : super(enum){
-        this.value = value
+        this.value = enum.enum.getMember(value)!!
     }
 
     constructor(enum: EnumVarConcrete) : super(enum){
         this.value = enum.value
-    }
-
-    constructor(b: MCIntConcrete, enum : Enum): super(b, enum){
-        value = b.value
     }
 
     override fun clone(): EnumVarConcrete {
@@ -192,6 +213,7 @@ class EnumVarConcrete : EnumVar, MCFPPValue<Int> {
             Function.addCommand(cmd.build("scoreboard players set $name ${SbObject.MCFPP_default} $value", false))
         }
         val re = EnumVar(this)
+        NBTBasedDataConcrete(enum.getMember(value.value)!!.data).toDynamic(false)
         if(replace){
             if(parentTemplate() != null){
                 (parent as DataTemplateObject).instanceField.putVar(identifier, re, true)
@@ -224,10 +246,10 @@ class EnumVarConcrete : EnumVar, MCFPPValue<Int> {
     @InsertCommand
     override fun getTempVar(): EnumVar {
         if (isTemp) return this
-        return EnumVarConcrete(enum ,value)
+        return EnumVarConcrete(enum, value.value)
     }
 
-    override fun getIntVar(): MCInt {
+    override fun asIntVar(): MCInt {
         return MCIntConcrete(this)
     }
 }

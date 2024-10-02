@@ -1,13 +1,14 @@
 package top.mcfpp.mni;
 
-import top.mcfpp.annotations.MNIRegister;
+import top.mcfpp.annotations.MNIFunction;
 import top.mcfpp.command.Command;
 import top.mcfpp.core.lang.*;
+import top.mcfpp.core.lang.bool.MCBool;
 import top.mcfpp.model.function.Function;
 import top.mcfpp.util.ValueWrapper;
 
 public class NBTDictionaryData {
-    @MNIRegister(caller = "dict")
+    @MNIFunction(caller = "dict")
     public static void clear(NBTDictionary caller){
         Function.Companion.addCommand(new Command("data modify")
                 .build(caller.getNbtPath().toCommandPart(), true)
@@ -15,7 +16,7 @@ public class NBTDictionaryData {
         );
     }
 
-    @MNIRegister(normalParams = {"string key"}, caller = "dict", returnType = "bool")
+    @MNIFunction(normalParams = {"string key"}, caller = "dict", returnType = "bool")
     public static void containsKey(MCString key, NBTDictionary caller, ValueWrapper<MCBool> re){
         if(key instanceof MCStringConcrete keyC){
             Function.Companion.addCommand(new Command("execute " +
@@ -27,12 +28,12 @@ public class NBTDictionaryData {
             Function.Companion.addCommand(new Command("execute " +
                 "store result score" + re.getValue().getIdentifier() + " " + re.getValue().getBoolObject() + " " +
                 "if data")
-                .build(caller.getNbtPath().toCommandPart(), true).build(".", false).buildMacro(key.getIdentifier(), false)
+                .build(caller.getNbtPath().toCommandPart(), true).build(".", false).buildMacro(key, false)
             );
         }
     }
 
-    @MNIRegister(normalParams = {"dict source"}, caller = "dict")
+    @MNIFunction(normalParams = {"dict source"}, caller = "dict")
     public static void merge(NBTDictionary source, NBTDictionary caller){
         if(source instanceof NBTDictionaryConcrete dictC){
             Function.Companion.addCommand(new Command("data modify")
@@ -49,7 +50,7 @@ public class NBTDictionaryData {
         }
     }
 
-    @MNIRegister(normalParams = {"string key"}, caller = "dict")
+    @MNIFunction(normalParams = {"string key"}, caller = "dict")
     public static void remove(MCString key, NBTDictionary caller){
         if(key instanceof MCStringConcrete keyC){
             Function.Companion.addCommand(new Command("data remove")
@@ -60,7 +61,7 @@ public class NBTDictionaryData {
             Function.Companion.addCommand(new Command("data remove")
                 .build(caller.getNbtPath().toCommandPart(), true)
                 .build(".", false)
-                .buildMacro(key.getIdentifier(), false)
+                .buildMacro(key, false)
             );
         }
     }

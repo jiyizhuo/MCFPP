@@ -7,6 +7,7 @@ import top.mcfpp.command.Command
 import top.mcfpp.command.Commands
 import top.mcfpp.mni.NBTBasedDataData
 import top.mcfpp.model.*
+import top.mcfpp.model.accessor.Property
 import top.mcfpp.model.function.Function
 import top.mcfpp.type.*
 import top.mcfpp.util.LogProcessor
@@ -22,7 +23,7 @@ import java.util.*
  *
  * @constructor Create empty Nbt
  */
-open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
+open class NBTBasedData : Var<NBTBasedData>, Indexable{
 
     open var nbtType: NBTTypeWithTag = NBTTypeWithTag.ANY
 
@@ -52,16 +53,18 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
      * 复制一个int
      * @param b 被复制的int值
      */
-    constructor(b: NBTBasedData<T>) : super(b)
+    constructor(b: NBTBasedData) : super(b)
+
+    constructor(b: EnumVar): super(b)
 
     /**
      * 将b中的值赋值给此变量
      * @param b 变量的对象
      */
-    override fun doAssign(b: Var<*>) : NBTBasedData<T> {
+    override fun doAssignedBy(b: Var<*>) : NBTBasedData {
         return when (b) {
-            is NBTBasedData<*> -> assignCommand(b as NBTBasedData<T>)
-            is MCFPPValue<*> -> assignCommand(NBTBasedDataConcrete(NBTUtil.toNBT(b)!!) as NBTBasedData<T>)
+            is NBTBasedData -> assignCommand(b)
+            is MCFPPValue<*> -> assignCommand(NBTBasedDataConcrete(NBTUtil.toNBT(b)!!) as NBTBasedData)
             else -> {
                 LogProcessor.error(TextTranslator.ASSIGN_ERROR.translate(b.type.typeName, type.typeName))
                 this
@@ -70,18 +73,18 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
     }
 
     @InsertCommand
-    protected open fun assignCommand(a: NBTBasedData<T>) : NBTBasedData<T>{
+    protected open fun assignCommand(a: NBTBasedData) : NBTBasedData{
         nbtType = a.nbtType
         return assignCommandLambda(a,
             ifThisIsClassMemberAndAIsConcrete = {b, final ->
-                b as NBTBasedDataConcrete<*>
+                b as NBTBasedDataConcrete
                 //对类中的成员的值进行修改
                 if(final.size == 2){
                     Function.addCommand(final[0])
                 }
-                final.last().build(Commands.dataSetValue(nbtPath, b.value as Tag<*>))
+                final.last().build(Commands.dataSetValue(nbtPath, b.value))
                 if(final.last().isMacro){
-                    Function.addCommand(Commands.buildMacroCommand(final.last()))
+                    Function.addCommands(final.last().buildMacroFunction())
                 }else{
                     Function.addCommand(final.last())
                 }
@@ -94,14 +97,14 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
                 }
                 final.last().build(Commands.dataSetFrom(nbtPath, b.nbtPath))
                 if(final.last().isMacro){
-                    Function.addCommand(Commands.buildMacroCommand(final.last()))
+                    Function.addCommands(final.last().buildMacroFunction())
                 }else{
                     Function.addCommand(final.last())
                 }
                 NBTBasedData(this)
             },
             ifThisIsNormalVarAndAIsConcrete = {b, _ ->
-                NBTBasedDataConcrete(this, (b as NBTBasedDataConcrete<T>).value)
+                NBTBasedDataConcrete(this, (b as NBTBasedDataConcrete).value)
             },
             ifThisIsNormalVarAndAIsClassMember = {b, final ->
                 if(final.size == 2){
@@ -109,7 +112,7 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
                 }
                 final.last().build(Commands.dataSetFrom(nbtPath, b.nbtPath))
                 if(final.last().isMacro){
-                    Function.addCommand(Commands.buildMacroCommand(final.last()))
+                    Function.addCommands(final.last().buildMacroFunction())
                 }else{
                     Function.addCommand(final.last())
                 }
@@ -118,8 +121,9 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
             ifThisIsNormalVarAndAIsNotConcrete = {b, _ ->
                 Function.addCommand(Commands.dataSetFrom(nbtPath, b.nbtPath))
                 NBTBasedData(this)
-            }) as NBTBasedData<T>
-        }
+            }
+        ) as NBTBasedData
+    }
 
     /**
      * 将这个变量强制转换为一个类型
@@ -147,7 +151,7 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
         }
     }
 
-    override fun clone(): NBTBasedData<T> {
+    override fun clone(): NBTBasedData {
         return NBTBasedData(this)
     }
 
@@ -156,19 +160,17 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
      *
      * @return
      */
-    override fun getTempVar(): NBTBasedData<T> {
-        val temp = NBTBasedData<T>()
+    override fun getTempVar(): NBTBasedData {
+        val temp = NBTBasedData()
         return temp.assignCommand(this)
     }
 
     override fun storeToStack() {
         //什么都不用做哦
-        return
     }
 
     override fun getFromStack() {
         //什么都不用做哦
-        return
     }
 
     /**
@@ -191,18 +193,20 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
         return data.getFunction(key, readOnlyParams, normalParams) to true
     }
 
-    override fun getByIndex(index: Var<*>): Accessor {
-        return Accessor(
-            when (index) {
-                is MCInt -> getByIntIndex(index)
-                is MCString -> getByStringIndex(index)
-                is NBTBasedData<*> -> getByNBTIndex(index as NBTBasedData<Tag<*>>)
-                else -> throw IllegalArgumentException("Invalid index type ${index.type}")
-            }
+    override fun getByIndex(index: Var<*>): PropertyVar {
+        return PropertyVar(
+            Property.buildSimpleProperty (
+                when (index) {
+                    is MCInt -> getByIntIndex(index)
+                    is MCString -> getByStringIndex(index)
+                    is NBTBasedData -> getByNBTIndex(index)
+                    else -> throw IllegalArgumentException("Invalid index type ${index.type}")
+                }
+            ),this
         )
     }
 
-    protected fun getByNBTIndex(index: NBTBasedData<Tag<*>>): NBTBasedData<*>{
+    protected fun getByNBTIndex(index: NBTBasedData): NBTBasedData{
         if(nbtType != NBTTypeWithTag.LIST && nbtType != NBTTypeWithTag.ANY){
             LogProcessor.error("Invalid nbt type")
         }
@@ -214,7 +218,7 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
         return re
     }
 
-    protected fun getByStringIndex(index: MCString): NBTBasedData<*> {
+    protected fun getByStringIndex(index: MCString): NBTBasedData {
         if(nbtType != NBTTypeWithTag.COMPOUND && nbtType != NBTTypeWithTag.ANY){
             LogProcessor.error("Invalid nbt type")
         }
@@ -223,7 +227,7 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
         return re
     }
 
-    open protected fun getByIntIndex(index: MCInt): NBTBasedData<*> {
+    open protected fun getByIntIndex(index: MCInt): NBTBasedData {
         if(nbtType != NBTTypeWithTag.LIST && nbtType != NBTTypeWithTag.ANY){
             LogProcessor.error("Invalid nbt type")
         }
@@ -232,7 +236,7 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
         return re
     }
 
-    fun toJson(): NBTBasedData<*> {
+    fun toJson(): NBTBasedData {
         when(nbtType){
             NBTTypeWithTag.INT_ARRAY -> {
                 TODO()
@@ -242,7 +246,7 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
     }
 
 
-    override fun toNBTVar(): NBTBasedData<*> {
+    override fun toNBTVar(): NBTBasedData {
         return this
     }
 
@@ -397,20 +401,13 @@ open class NBTBasedData<T : Tag<*>> : Var<NBTBasedData<T>>, Indexable{
     }
 }
 
-class NBTBasedDataConcrete<T: Tag<*>> : NBTBasedData<T>, MCFPPValue<T> {
+class NBTBasedDataConcrete : NBTBasedData, MCFPPValue<Tag<*>> {
 
-    override var value : T
+    override lateinit var value : Tag<*>
 
-    /**
-     * 创建一个固定的int
-     *
-     * @param identifier 标识符
-     * @param curr 域容器
-     * @param value 值
-     */
     constructor(
         curr: FieldContainer,
-        value: T,
+        value: Tag<*>,
         identifier: String = UUID.randomUUID().toString()
     ) : super(curr.prefix + identifier) {
         this.value = value
@@ -418,27 +415,17 @@ class NBTBasedDataConcrete<T: Tag<*>> : NBTBasedData<T>, MCFPPValue<T> {
         nbtType = NBTBasedData.Companion.NBTTypeWithTag.getTagType(value)
     }
 
-    /**
-     * 创建一个固定的int。它的标识符和mc名一致/
-     * @param identifier 标识符。如不指定，则为随机uuid
-     * @param value 值
-     */
-    constructor(value: T, identifier: String = UUID.randomUUID().toString()) : super(identifier) {
+    constructor(value: Tag<*>, identifier: String = UUID.randomUUID().toString()) : super(identifier) {
         this.value = value
         //记录nbt字面量类型
         nbtType = NBTBasedData.Companion.NBTTypeWithTag.getTagType(value)
     }
 
-    /**
-     * 创建一个固定的int。它的标识符和mc名一致/
-     * @param identifier 标识符。如不指定，则为随机uuid
-     * @param value 值
-     */
-    constructor(data: NBTBasedData<T>, value: T) : super(data) {
+    constructor(data: NBTBasedData, value: Tag<*>) : super(data) {
         this.value = value
     }
 
-    constructor(v: NBTBasedDataConcrete<T>) : super(v){
+    constructor(v: NBTBasedDataConcrete) : super(v){
         this.value = v.value
     }
 
@@ -467,11 +454,11 @@ class NBTBasedDataConcrete<T: Tag<*>> : NBTBasedData<T>, MCFPPValue<T> {
         return buildCastErrorVar(type)
     }
 
-    override fun clone(): NBTBasedDataConcrete<T> {
+    override fun clone(): NBTBasedDataConcrete {
         return NBTBasedDataConcrete(this)
     }
 
-    override fun getTempVar(): NBTBasedDataConcrete<T> {
+    override fun getTempVar(): NBTBasedDataConcrete {
         return NBTBasedDataConcrete(this.value)
     }
 

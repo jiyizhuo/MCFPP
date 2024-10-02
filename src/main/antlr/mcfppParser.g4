@@ -114,7 +114,7 @@ classBody
 classMember
     :   classFunctionDeclaration
     |   classFieldDeclaration ';'
-    |   constructorDeclaration
+    |   classConstructorDeclaration
     |   nativeClassFunctionDeclaration
     |   abstractClassFunctionDeclaration
     |   annotation
@@ -133,7 +133,25 @@ nativeClassFunctionDeclaration
     ;
 
 classFieldDeclaration
-    :   accessModifier? type fieldDeclarationExpression
+    :   accessModifier? type fieldDeclarationExpression accessor?
+    ;
+
+accessor
+    :   '{' getter? setter? '}'
+    ;
+
+getter
+    :   GET '{' functionBody '}'
+    |   GET '=' javaRefer ';'
+    |   GET '=' expression ';'
+    |   GET ';'
+    ;
+
+setter
+    :   SET '{' functionBody '}'
+    |   SET '=' javaRefer ';'
+    |   SET '=' expression ';'
+    |   SET ';'
     ;
 
 genericClassImplement
@@ -161,6 +179,7 @@ templateMemberDeclaration
 templateMember
     :   templateFunctionDeclaration
     |   templateFieldDeclaration
+    |   templateConstructorDeclaration
     |   annotation
     ;
 
@@ -169,7 +188,16 @@ templateFunctionDeclaration
     ;
 
 templateFieldDeclaration
-    :   CONST? type Identifier ('=' expression)? ';'
+    :   CONST? (singleTemplateFieldType | unionTemplateFieldType) Identifier ('=' expression)? ';'
+    ;
+
+singleTemplateFieldType
+    :   type
+    |   type '?'
+    ;
+
+unionTemplateFieldType
+    :   singleTemplateFieldType (PIPE singleTemplateFieldType)*
     ;
 
 //接口声明
@@ -212,7 +240,7 @@ enumBody
     ;
 
 enumMember
-    :   Identifier ('=' intValue)?
+    :   Identifier ('=' nbtValue)?
     ;
 
 
@@ -235,7 +263,12 @@ accessModifier
     ;
 
 //构造函数声明
-constructorDeclaration
+classConstructorDeclaration
+    :   accessModifier? CONSTRUCTOR normalParams '{' functionBody '}'
+    ;
+
+//构造函数声明
+templateConstructorDeclaration
     :   accessModifier? CONSTRUCTOR normalParams '{' functionBody '}'
     ;
 
@@ -363,9 +396,21 @@ varWithSelector
     ;
 
 var
+    :   bucketExpression
+    |   varWithSuffix
+    |   functionCall
+    ;
+
+bucketExpression
     :   '(' expression ')'
-    |   Identifier identifierSuffix*
-    |   namespaceID arguments
+    ;
+
+varWithSuffix
+    :   Identifier identifierSuffix*
+    ;
+
+functionCall
+    :   namespaceID arguments
     ;
 
 identifierSuffix
@@ -418,7 +463,11 @@ executeStatement
     ;
 
 executeContext
-    :   varWithSelector '=' expression
+    :   executeExpression '=' expression
+    ;
+
+executeExpression
+    :   var ('.' var)*
     ;
 
 orgCommand
@@ -497,6 +546,7 @@ returnStatement
 
 block
     :   '{' statement* '}'
+    |   statement
     ;
 
 selfAddOrMinusExpression
@@ -538,13 +588,21 @@ functionReturnType
 value
     :   intValue
     |   floatValue
-    |   RelativeValue
+    |   coordinate
     |   LineString
     |   boolValue
     |   multiLineStringLiteral
     |   nbtValue
     |   type
     |   TargetSelector
+    ;
+
+coordinate
+    :   coordinateDimension coordinateDimension coordinateDimension?
+    ;
+
+coordinateDimension
+    :   (RelativeValue | intValue | floatValue)
     ;
 
 intValue

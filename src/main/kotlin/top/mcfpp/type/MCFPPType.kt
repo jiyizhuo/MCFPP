@@ -233,8 +233,8 @@ open class MCFPPType(
             MCFPPBaseType.JavaVar.typeName to MCFPPBaseType.JavaVar,
             MCFPPBaseType.JsonText.typeName to MCFPPBaseType.JsonText,
             MCFPPNBTType.NBT.typeName to MCFPPNBTType.NBT,
-            //MCFPPNBTType.Map.typeName to MCFPPNBTType.Map,
-            //MCFPPNBTType.Dict.typeName to MCFPPNBTType.Dict
+            MCFPPBaseType.Coordinate2.typeName to MCFPPBaseType.Coordinate2,
+            MCFPPBaseType.Coordinate3.typeName to MCFPPBaseType.Coordinate3,
         )}
 
         /**
@@ -242,8 +242,9 @@ open class MCFPPType(
          */
         private val genericTypeCache = mutableMapOf(
             "list" to {generic: Array<MCFPPType> -> MCFPPListType(generic[0]) },
-            "dict" to {generic: Array<MCFPPType> -> TODO()},
-            "map" to {generic: Array<MCFPPType> -> TODO()}
+            "dict" to {generic: Array<MCFPPType> -> MCFPPDictType(generic[0])},
+            "map" to {generic: Array<MCFPPType> -> MCFPPMapType(generic[0])},
+            "ImmutableList" to {generic: Array<MCFPPType> -> MCFPPImmutableListType(generic[0])},
         )
 
         val baseType:Set<MCFPPType> = setOf(
@@ -260,6 +261,8 @@ open class MCFPPType(
             MCFPPBaseType.JsonText,
             MCFPPNBTType.NBT
         )
+
+        val privateType: HashMap<String,MCFPPType> = HashMap()
 
         val baseResourceType: Set<MCFPPResourceType> = setOf()
 
@@ -414,3 +417,4 @@ open class MCFPPType(
     }
 
 }
+

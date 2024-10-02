@@ -195,7 +195,7 @@ class YRotationPredicate(val y_rotation: RangeVar): EntitySelectorPredicate {
     override fun isConcrete(): Boolean = y_rotation is RangeVarConcrete
 }
 
-class NBTPredicate(val nbt: NBTBasedData<*>): EntitySelectorPredicate {
+class NBTPredicate(val nbt: NBTBasedData): EntitySelectorPredicate {
     override fun toCommandPart(): Command {
         return if(nbt is NBTBasedDataConcrete){
             Command.build("nbt=").build(nbt.value.valueToString())

@@ -1,32 +1,35 @@
 package top.mcfpp.mni;
 
 import net.querz.nbt.io.SNBTUtil;
+import net.querz.nbt.tag.ListTag;
 import net.querz.nbt.tag.Tag;
 import top.mcfpp.Project;
 import top.mcfpp.annotations.InsertCommand;
-import top.mcfpp.annotations.MNIRegister;
+import top.mcfpp.annotations.MNIFunction;
 import top.mcfpp.command.Command;
 import top.mcfpp.command.Commands;
 import top.mcfpp.core.lang.*;
 import top.mcfpp.core.lang.MCFPPValue;
+import top.mcfpp.core.lang.bool.MCBool;
+import top.mcfpp.core.lang.bool.MCBoolConcrete;
 import top.mcfpp.model.function.Function;
 import top.mcfpp.util.NBTUtil;
 import top.mcfpp.util.ValueWrapper;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Objects;
 import java.util.UUID;
 
+@SuppressWarnings({"unchecked","rawtypes"})
 public class NBTListConcreteData {
 
     @InsertCommand
-    @MNIRegister(normalParams = {"E e"}, caller = "list<E>")
+    @MNIFunction(normalParams = {"E e"}, caller = "list<E>")
     public static void add(Var<?> e, NBTListConcrete caller){
         if(e instanceof MCFPPValue<?>){
             //都是确定的
             //直接添加值
-            caller.getValue().add(NBTUtil.INSTANCE.toNBT(e));
+            ((ListTag)caller.getValue()).add(NBTUtil.INSTANCE.toNBT(e));
         }else {
             //e不是确定的，但是list可能是确定的可能不是确定的
             caller.toDynamic(true);
@@ -54,8 +57,8 @@ public class NBTListConcreteData {
     }
 
     @InsertCommand
-    @MNIRegister(normalParams = {"list<E> list"}, caller = "list<E>")
-    public static void addAll(NBTList list, NBTListConcrete<Tag<?>> caller){
+    @MNIFunction(normalParams = {"list<E> list"}, caller = "list<E>")
+    public static void addAll(NBTList list, NBTListConcrete caller){
         if(list instanceof MCFPPValue<?> ec){
             //都是确定的
             //直接添加值
@@ -63,9 +66,9 @@ public class NBTListConcreteData {
         }else {
             caller.toDynamic(true);
             Command[] command;
-            NBTBasedData<?> l;
+            NBTBasedData l;
             if(list.parentClass() != null) {
-                l = (NBTBasedData<?>) list.getTempVar();
+                l = list.getTempVar();
             }else{
                 l = list;
             }
@@ -89,12 +92,12 @@ public class NBTListConcreteData {
     }
 
     @InsertCommand
-    @MNIRegister(normalParams = {"int index", "E e"}, caller = "list<E>")
+    @MNIFunction(normalParams = {"int index", "E e"}, caller = "list<E>")
     public static void insert(MCInt index, Var<?> e, NBTListConcrete caller){
         if(e instanceof MCFPPValue<?> && index instanceof MCIntConcrete indexC){
             //都是确定的
             //直接添加值
-            caller.getValue().add(Objects.requireNonNull(indexC.getValue()), NBTUtil.INSTANCE.toNBT(e));
+            ((ListTag) caller.getValue()).add(indexC.getValue(), NBTUtil.INSTANCE.toNBT(e));
         }else if(index instanceof MCIntConcrete indexC){
             //e不是确定的，index是确定的，所以可以直接调用命令而不需要宏
             int i = indexC.getValue();
@@ -117,7 +120,7 @@ public class NBTListConcreteData {
                         Project.INSTANCE.getCurrNamespace() + ".stack_frame[" + caller.getStackIndex() + "]." + e.getIdentifier())};
             }
             Function.Companion.addCommands(command);
-        }else if(e instanceof MCFPPValue<?> eC){
+        }else if(e instanceof MCFPPValue<?>){
             //e是确定的，index不是确定的，需要使用宏
             caller.toDynamic(true);
             Tag<?> tag = NBTUtil.INSTANCE.toNBT(e);
@@ -130,17 +133,15 @@ public class NBTListConcreteData {
                                     "insert").build("", "$" + index.getIdentifier(), true).build ("value " + SNBTUtil.toSNBT(tag), true), true
                     );
                     Function.Companion.addCommand(command[0]);
-                    var f = Commands.INSTANCE.buildMacroCommand(command[1]).build("with storage mcfpp:system " +
-                            Project.INSTANCE.getCurrNamespace() + ".stack_frame[" + caller.getStackIndex() + "]", true);
-                    Function.Companion.addCommand(f);
+                    var f = command[1].buildMacroFunction();
+                    Function.Companion.addCommands(f);
                 } else {
                     var command = new Command("data modify " +
                             "storage mcfpp:system " +
                             Project.INSTANCE.getCurrNamespace() + ".stack_frame[" + caller.getStackIndex() + "]." + caller.getIdentifier() + " " +
                             "insert").build("", "$" + index.getIdentifier(), true).build("value " + SNBTUtil.toSNBT(tag), true);
-                    var f = Commands.INSTANCE.buildMacroCommand(command).build("with storage mcfpp:system " +
-                            Project.INSTANCE.getCurrNamespace() + ".stack_frame[" + caller.getStackIndex() + "]", true);
-                    Function.Companion.addCommand(f);
+                    var f = command.buildMacroFunction();
+                    Function.Companion.addCommands(f);
                 }
             } catch (IOException ex) {
                 throw new RuntimeException(ex);
@@ -166,20 +167,19 @@ public class NBTListConcreteData {
                         Project.INSTANCE.getCurrNamespace() + ".stack_frame[" + caller.getStackIndex() + "]." + e.getIdentifier(), true)};
             }
             if(command.length == 2) Function.Companion.addCommand(command[0]);
-            var f = Commands.INSTANCE.buildMacroCommand(command[command.length - 1]).build("with storage mcfpp:system " +
-                    Project.INSTANCE.getCurrNamespace() + ".stack_frame[" + caller.getStackIndex() + "]", true);
-            Function.Companion.addCommand(f);
+            var f = command[command.length - 1].buildMacroFunction();
+            Function.Companion.addCommands(f);
         }
     }
 
     @InsertCommand
-    @MNIRegister(normalParams = {"E e"}, caller = "list<E>")
+    @MNIFunction(normalParams = {"E e"}, caller = "list<E>")
     public static void remove(Var<?> e, NBTListConcrete caller){
         //TODO NBT的api本来就没有remove(E e)这个方法，只有remove(int index)
     }
 
     @InsertCommand
-    @MNIRegister(normalParams = {"int index"}, caller = "list<E>")
+    @MNIFunction(normalParams = {"int index"}, caller = "list<E>")
     public static void removeAt(MCInt index, NBTListConcrete caller){
         if(index instanceof MCIntConcrete indexC){
             //确定的
@@ -191,11 +191,11 @@ public class NBTListConcreteData {
     }
 
     @InsertCommand
-    @MNIRegister(normalParams = {"E e"}, caller = "list<E>", returnType = "int")
+    @MNIFunction(normalParams = {"E e"}, caller = "list<E>", returnType = "int")
     public static void indexOf(Var<?> e, NBTListConcrete caller, ValueWrapper<MCInt> returnVar){
         if(e instanceof MCFPPValue<?>){
             //确定的
-            var i = caller.getValue().indexOf(NBTUtil.INSTANCE.toNBT(e));
+            var i = ((ListTag) caller.getValue()).indexOf(NBTUtil.INSTANCE.toNBT(e));
             returnVar.setValue(new MCIntConcrete(i, UUID.randomUUID().toString()));
         }else {
             NBTListData.indexOf(e, (NBTList) caller.toDynamic(true), returnVar);
@@ -203,7 +203,7 @@ public class NBTListConcreteData {
     }
 
     @InsertCommand
-    @MNIRegister(normalParams = {"E e"}, caller = "list<E>", returnType = "int")
+    @MNIFunction(normalParams = {"E e"}, caller = "list<E>", returnType = "int")
     public static void lastIndexOf(Var<?> e, NBTListConcrete caller, ValueWrapper<MCInt> returnVar){
         if(e instanceof MCFPPValue<?>){
             //确定的
@@ -219,11 +219,11 @@ public class NBTListConcreteData {
         }
     }
 
-    @MNIRegister(normalParams = {"E e"}, caller = "list<E>", returnType = "bool")
+    @MNIFunction(normalParams = {"E e"}, caller = "list<E>", returnType = "bool")
     public static void contains(Var<?> e, NBTListConcrete caller, ValueWrapper<MCBool> returnVar){
         var n = e.toNBTVar();
-        if(n instanceof NBTBasedDataConcrete<?> nC){
-            var contains = caller.getValue().contains(nC.getValue());
+        if(n instanceof NBTBasedDataConcrete nC){
+            var contains = ((ListTag) caller.getValue()).contains(nC.getValue());
             returnVar.setValue(new MCBoolConcrete(contains, UUID.randomUUID().toString()));
         }else {
             caller.toDynamic(false);
@@ -231,8 +231,8 @@ public class NBTListConcreteData {
         }
     }
 
-    @MNIRegister(caller = "list<E>")
-    public static void clear(NBTListConcrete<?> caller){
+    @MNIFunction(caller = "list<E>")
+    public static void clear(NBTListConcrete caller){
         caller.getValue().clear();
     }
 }

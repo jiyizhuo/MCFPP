@@ -1,8 +1,9 @@
 package top.mcfpp.model
 
 import top.mcfpp.Project
-import top.mcfpp.annotations.MNIRegister
+import top.mcfpp.annotations.MNIFunction
 import top.mcfpp.core.lang.Var
+import top.mcfpp.model.accessor.Property
 import top.mcfpp.type.MCFPPBaseType
 import top.mcfpp.type.MCFPPType
 import top.mcfpp.model.annotation.Annotation
@@ -106,12 +107,11 @@ open class CompoundData : FieldContainer, Serializable {
      * @param member 要添加的成员
      */
     open fun addMember(member: Member): Boolean {
-        return if (member is Function) {
-            field.addFunction(member, false)
-        } else if (member is Var<*>) {
-            field.putVar(member.identifier, member)
-        } else {
-            TODO()
+        return when (member) {
+            is Function -> field.addFunction(member, false)
+            is Var<*> -> field.putVar(member.identifier, member)
+            is Property -> field.putProperty(member.field.identifier, member)
+            else -> TODO()
         }
     }
 
@@ -199,20 +199,23 @@ open class CompoundData : FieldContainer, Serializable {
         //获取所有带有注解MNIMethod的Java方法
         val methods = cls.methods
         for(method in methods){
-            val mniRegister = method.getAnnotation(MNIRegister::class.java)
+            val mniRegister = method.getAnnotation(MNIFunction::class.java)
             if(mniRegister != null){
                 if(!Modifier.isStatic(method.modifiers)) {
                     LogProcessor.error("MNIMethod ${method.name} in class ${cls.name} must be static")
                     continue
                 }
+                if(this is ObjectCompoundData && !mniRegister.isObject) continue
                 //解析MNIMethod注解成员
                 val readOnlyType = mniRegister.readOnlyParams.map {
-                    val qwq = it.split(" ", limit = 2)
-                    qwq[1] to MCFPPType.parseFromIdentifier(qwq[0], Namespace.currNamespaceField)
+                    var qwq = it.split(" ", limit = 3)
+                    if(qwq.size == 3) qwq = qwq.subList(1, 3)
+                    qwq[1] to MCFPPType.parseFromIdentifier(qwq[0], Namespace.currNamespaceField) to it.startsWith("static")
                 }
                 val normalType = mniRegister.normalParams.map {
-                    val qwq = it.split(" ", limit = 2)
-                    qwq[1] to MCFPPType.parseFromIdentifier(qwq[0], Namespace.currNamespaceField)
+                    var qwq = it.split(" ", limit = 3)
+                    if(qwq.size == 3) qwq = qwq.subList(1, 3)
+                    qwq[1] to MCFPPType.parseFromIdentifier(qwq[0], Namespace.currNamespaceField) to it.startsWith("static")
                 }
                 val returnType = MCFPPType.parseFromIdentifier(mniRegister.returnType, Namespace.currNamespaceField)
                 var exceptedParamCount = readOnlyType.size + normalType.size
@@ -230,10 +233,10 @@ open class CompoundData : FieldContainer, Serializable {
                 val nf = NativeFunction(method.name, returnType, javaMethod = method)
                 nf.caller = mniRegister.caller
                 for(rt in readOnlyType){
-                    nf.appendReadOnlyParam(rt.second, rt.first)
+                    nf.appendReadOnlyParam(rt.first.second, rt.first.first, rt.second)
                 }
                 for(nt in normalType){
-                    nf.appendNormalParam(nt.second, nt.first)
+                    nf.appendNormalParam(nt.first.second, nt.first.first, nt.second)
                 }
                 //有继承
                 if(mniRegister.override){
@@ -275,6 +278,10 @@ open class CompoundData : FieldContainer, Serializable {
     fun forMember(operation: (Member) -> Any?){
         field.forEachFunction { operation(it) }
         field.forEachVar { operation(it) }
+    }
+
+    companion object {
+        val emptyData = CompoundData("empty", "mcfpp")
     }
 
 }

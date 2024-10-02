@@ -5,6 +5,8 @@ import top.mcfpp.lib.EntitySelector
 import top.mcfpp.lib.PlainChatComponent
 import top.mcfpp.model.Class
 import top.mcfpp.core.lang.*
+import top.mcfpp.core.lang.bool.MCBool
+import top.mcfpp.core.lang.bool.MCBoolConcrete
 import top.mcfpp.model.CompoundData
 import top.mcfpp.model.FieldContainer
 import top.mcfpp.util.LogProcessor
@@ -29,6 +31,7 @@ class MCFPPBaseType {
         override fun buildUnConcrete(identifier: kotlin.String, clazz: Class): Var<*> = MCAny(clazz, identifier)
 
     }
+
     object Int: MCFPPType(parentType = listOf(Any)){
 
         override val objectData: CompoundData
@@ -205,24 +208,40 @@ class MCFPPBaseType {
         }
     }
 
+    object Coordinate3: MCFPPType(parentType = listOf(Any)){
+
+        override val objectData: CompoundData
+            get() = Coordinate3Var.data
+
+        override val typeName: kotlin.String
+            get() = "coord3"
+
+        override fun build(identifier: kotlin.String, container: FieldContainer): Var<*> = Coordinate3Var(container, identifier)
+        override fun build(identifier: kotlin.String): Var<*> = Coordinate3Var(identifier)
+        override fun build(identifier: kotlin.String, clazz: Class): Var<*> = Coordinate3Var(clazz, identifier)
+        override fun buildUnConcrete(identifier: kotlin.String, container: FieldContainer): Var<*> = Coordinate3Var(container, identifier)
+        override fun buildUnConcrete(identifier: kotlin.String): Var<*> = Coordinate3Var(identifier)
+        override fun buildUnConcrete(identifier: kotlin.String, clazz: Class): Var<*> = Coordinate3Var(clazz, identifier)
+    }
+
+    object Coordinate2: MCFPPType(parentType = listOf(Any)){
+
+        override val objectData: CompoundData
+            get() = Coordinate2Var.data
+
+        override val typeName: kotlin.String
+            get() = "coord2"
+
+        override fun build(identifier: kotlin.String, container: FieldContainer): Var<*> = Coordinate2Var(container, identifier)
+        override fun build(identifier: kotlin.String): Var<*> = Coordinate2Var(identifier)
+        override fun build(identifier: kotlin.String, clazz: Class): Var<*> = Coordinate2Var(clazz, identifier)
+        override fun buildUnConcrete(identifier: kotlin.String, container: FieldContainer): Var<*> = Coordinate2Var(container, identifier)
+        override fun buildUnConcrete(identifier: kotlin.String): Var<*> = Coordinate2Var(identifier)
+        override fun buildUnConcrete(identifier: kotlin.String, clazz: Class): Var<*> = Coordinate2Var(clazz, identifier)
+    }
+
 }
 
-class LimitedSelectorType(val limit: Int): MCFPPType(parentType = listOf(MCFPPEntityType.Entity)){
-
-    override val objectData: CompoundData
-        get() = SelectorVar.data
-
-    override val typeName: String
-        get() = "selector[$limit]"
-
-    override fun build(identifier: String, container: FieldContainer): Var<*> = SelectorVarConcrete(EntitySelector(EntitySelector.Companion.SelectorType.ALL_ENTITIES).limit(limit), container, identifier)
-    override fun build(identifier: String): Var<*> = SelectorVarConcrete(EntitySelector(EntitySelector.Companion.SelectorType.ALL_ENTITIES).limit(limit), identifier)
-    override fun build(identifier: String, clazz: Class): Var<*> = SelectorVarConcrete(EntitySelector(EntitySelector.Companion.SelectorType.ALL_ENTITIES).limit(limit), clazz, identifier)
-    override fun buildUnConcrete(identifier: String, container: FieldContainer): Var<*> = SelectorVar(EntitySelector.Companion.SelectorType.ALL_ENTITIES, container, identifier)
-    override fun buildUnConcrete(identifier: String): Var<*> = SelectorVar(EntitySelector.Companion.SelectorType.ALL_ENTITIES, identifier)
-    override fun buildUnConcrete(identifier: String, clazz: Class): Var<*> = SelectorVar(EntitySelector.Companion.SelectorType.ALL_ENTITIES, clazz, identifier)
-
-}
 
 //class MCFPPEntityType(
 //    val resourceLocation: ResourceLocation

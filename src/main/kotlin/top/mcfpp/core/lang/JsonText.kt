@@ -1,15 +1,18 @@
 package top.mcfpp.core.lang
 
-import net.querz.nbt.tag.CompoundTag
 import top.mcfpp.command.Command
 import top.mcfpp.command.Commands
-import top.mcfpp.type.MCFPPBaseType
-import top.mcfpp.type.MCFPPType
+import top.mcfpp.model.accessor.SimpleAccessor
+import top.mcfpp.core.lang.bool.MCBool
 import top.mcfpp.lib.ChatComponent
+import top.mcfpp.lib.NBTChatComponent
 import top.mcfpp.model.CompoundData
 import top.mcfpp.model.FieldContainer
 import top.mcfpp.model.Member
+import top.mcfpp.model.accessor.Property
 import top.mcfpp.model.function.Function
+import top.mcfpp.type.MCFPPBaseType
+import top.mcfpp.type.MCFPPType
 import top.mcfpp.util.LogProcessor
 import top.mcfpp.util.TextTranslator
 import top.mcfpp.util.TextTranslator.translate
@@ -25,7 +28,7 @@ import java.util.*
  * 访问所得的依然是一个text。
  *
  */
-open class JsonText : NBTBasedData<CompoundTag> {
+open class JsonText : NBTBasedData {
 
     var isElement = false
 
@@ -50,7 +53,7 @@ open class JsonText : NBTBasedData<CompoundTag> {
      */
     constructor(b: JsonText) : super(b)
 
-    override fun doAssign(b: Var<*>): NBTBasedData<CompoundTag> {
+    override fun doAssignedBy(b: Var<*>): NBTBasedData {
         when (b) {
             is JsonText -> assignCommand(b)
             else -> LogProcessor.error(TextTranslator.ASSIGN_ERROR.translate(b.type.typeName, type.typeName))
@@ -58,7 +61,11 @@ open class JsonText : NBTBasedData<CompoundTag> {
         return this
     }
 
-    override fun clone(): NBTBasedData<CompoundTag> {
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        return !b.implicitCast(type).isError
+    }
+
+    override fun clone(): NBTBasedData {
         return JsonText(this)
     }
 
@@ -68,17 +75,17 @@ open class JsonText : NBTBasedData<CompoundTag> {
         return temp.assignCommand(this) as JsonText
     }
 
-    override fun getByIndex(index: Var<*>): Accessor {
+    override fun getByIndex(index: Var<*>): PropertyVar {
         if(isElement){
             throw IllegalArgumentException("Cannot get index of text element")
         }
-        return Accessor(when(index){
-            is MCInt -> getByIntIndex(index)
+        return when(index){
+            is MCInt -> PropertyVar(Property.buildSimpleProperty(getByIntIndex(index)), this)
             else -> throw IllegalArgumentException("Invalid index type ${index.type}")
-        })
+        }
     }
 
-    override fun getByIntIndex(index: MCInt): NBTBasedData<*> {
+    override fun getByIntIndex(index: MCInt): NBTBasedData {
         val re = JsonText(this)
         re.nbtPath.intIndex(index)
         re.isElement = true
@@ -92,28 +99,30 @@ open class JsonText : NBTBasedData<CompoundTag> {
         return v to true
     }
 
+    open fun toCommandPart(): Command{
+        return NBTChatComponent(this, true).toCommandPart()
+    }
+
     companion object {
-        val data = CompoundData("JsonText","mcfpp.lang")
+        val data by lazy {
+            CompoundData("JsonText","mcfpp.lang").apply {
+                extends(NBTBasedData.data)
 
-        init {
-            data.initialize()
-            data.extends(NBTBasedData.data)
-
-            data.addMember(MCInt("color"))
-            data.addMember(MCBool("bold"))
-            data.addMember(MCBool("italic"))
-            data.addMember(MCBool("underlined"))
-            data.addMember(MCBool("strikethrough"))
-            data.addMember(MCBool("obfuscated"))
-            data.addMember(MCString("insertion"))
-
+                addMember(MCInt("color"))
+                addMember(MCBool("bold"))
+                addMember(MCBool("italic"))
+                addMember(MCBool("underlined"))
+                addMember(MCBool("strikethrough"))
+                addMember(MCBool("obfuscated"))
+                addMember(MCString("insertion"))
+            }
         }
     }
 }
 
 class JsonTextConcrete : MCFPPValue<ChatComponent>, JsonText {
 
-    override var value: ChatComponent
+    override lateinit var value: ChatComponent
 
     /**
      * 创建一个固定的int
@@ -171,6 +180,10 @@ class JsonTextConcrete : MCFPPValue<ChatComponent>, JsonText {
             }
         }
         return re
+    }
+
+    override fun toCommandPart(): Command {
+        return value.toCommandPart()
     }
 
     companion object {

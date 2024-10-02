@@ -8,11 +8,12 @@ import top.mcfpp.exception.*
 import top.mcfpp.io.MCFPPFile
 import top.mcfpp.core.lang.*
 import top.mcfpp.type.MCFPPType
-import top.mcfpp.annotations.MNIRegister
+import top.mcfpp.annotations.MNIFunction
 import top.mcfpp.type.MCFPPBaseType
 import top.mcfpp.model.*
 import top.mcfpp.model.Class
 import top.mcfpp.model.Member.AccessModifier
+import top.mcfpp.model.accessor.*
 import top.mcfpp.model.field.GlobalField
 import top.mcfpp.model.field.IFieldWithType
 import top.mcfpp.model.function.*
@@ -171,7 +172,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
         }
         //如果没有构造函数，自动添加默认的空构造函数
         if (Class.currClass!!.constructors.size == 0) {
-            Class.currClass!!.addConstructor(Constructor(Class.currClass!!))
+            Class.currClass!!.addConstructor(ClassConstructor(Class.currClass!!))
         }
         //是否为抽象类
         if(!Class.currClass!!.isAbstract){
@@ -243,7 +244,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
         if(m is Member){
             //访问修饰符
             m.accessModifier = AccessModifier.valueOf(ctx.accessModifier()?.text?:"public".uppercase(Locale.getDefault()))
-            if (m !is Constructor) {
+            if (m !is ClassConstructor) {
                 Class.currClass!!.addMember(m)
             }
         }else if(m is ArrayList<*>){
@@ -251,7 +252,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             for (c in m){
                 //访问修饰符
                 (c as Member).accessModifier = AccessModifier.valueOf(ctx.accessModifier()?.text?:"public".uppercase(Locale.getDefault()))
-                if (c !is Constructor) {
+                if (c !is ClassConstructor) {
                     Class.currClass!!.addMember(c)
                 }
             }
@@ -267,8 +268,8 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             visit(ctx.classFunctionDeclaration())
         } else if (ctx.classFieldDeclaration() != null) {
             visit(ctx.classFieldDeclaration())
-        } else if (ctx.constructorDeclaration() != null) {
-            visit(ctx.constructorDeclaration())
+        } else if (ctx.classConstructorDeclaration() != null) {
+            visit(ctx.classConstructorDeclaration())
         }else{
             return null
         }
@@ -302,7 +303,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             )
         }
         if(!isStatic){
-            val thisObj = MCFPPType.parseFromIdentifier(Class.currClass!!.identifier, typeScope).build("this", f)
+            val thisObj = MCFPPType.parseFromIdentifier(Class.currClass!!.identifier, typeScope).buildUnConcrete("this", f)
             f.field.putVar("this",thisObj)
         }
         //解析参数
@@ -364,7 +365,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             val methods = clazz.methods
             var hasFind = false
             for(method in methods){
-                val mniRegister = method.getAnnotation(MNIRegister::class.java) ?: continue
+                val mniRegister = method.getAnnotation(MNIFunction::class.java) ?: continue
                 //解析MNIMethod注解成员
                 val readOnlyType = mniRegister.readOnlyParams.map {
                     MCFPPType.parseFromIdentifier(it.split(" ", limit = 2)[0], Namespace.currNamespaceField)
@@ -394,11 +395,11 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
      * @param ctx the parse tree
      * @return 这个构造函数的对象
      */
-    override fun visitConstructorDeclaration(ctx: mcfppParser.ConstructorDeclarationContext): Any {
+    override fun visitClassConstructorDeclaration(ctx: mcfppParser.ClassConstructorDeclarationContext): Any {
         Project.ctx = ctx
         //类构造函数
         //创建构造函数对象，注册函数
-        val f = Constructor(Class.currClass!!)
+        val f = ClassConstructor(Class.currClass!!)
         f.addParamsFromContext(ctx.normalParams())
         if(!Class.currClass!!.addConstructor(f)){
             LogProcessor.error("Already defined constructor:  constructor(" + ctx.normalParams().text + ") in class " + Class.currClass)
@@ -406,6 +407,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
         return f
     }
 
+    private lateinit var currVar: Var<*>
     /**
      * 类字段的声明
      * @param ctx the parse tree
@@ -419,7 +421,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
         val c = ctx.fieldDeclarationExpression()
         //字段的解析在Analyse阶段结束后，Compile阶段开始的时候进行
         val type = MCFPPType.parseFromIdentifier(ctx.type().text, typeScope)
-        val `var` = type.build(c.Identifier().text, Class.currClass!!)
+        val `var` = type.buildUnConcrete(c.Identifier().text, Class.currClass!!)
         //是否是静态的
         if(isStatic){
             `var`.isStatic = true
@@ -439,7 +441,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             Function.addComment(ctx.text)
             val init: Var<*> = MCFPPExprVisitor().visit(c.expression())!!
             try {
-                `var`.assign(init)
+                `var`.assignedBy(init)
             } catch (e: VariableConverseException) {
                 LogProcessor.error("Cannot convert " + init.javaClass + " to " + `var`.javaClass)
                 Function.currFunction = Function.nullFunction
@@ -448,8 +450,52 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             Function.currFunction = Function.nullFunction
             `var`.hasAssigned = true
         }
-        reList.add(`var`)
+        //属性访问器
+        currVar = `var`
+        val properties = visit(ctx.accessor()) as Property
+        reList.add(properties)
         return reList
+    }
+
+    override fun visitAccessor(ctx: mcfppParser.AccessorContext): Any? {
+        Project.ctx = ctx
+        val getter = if(ctx.getter() != null){
+            visit(ctx.getter()) as AbstractAccessor
+        }else{
+            null
+        }
+        val setter = if(ctx.setter() != null){
+            visit(ctx.setter()) as AbstractMutator
+        }else{
+            null
+        }
+        return Property(currVar, getter, setter)
+    }
+
+    override fun visitGetter(ctx: mcfppParser.GetterContext): Any? {
+        Project.ctx = ctx
+        return if(ctx.functionBody() != null){
+            FunctionAccessor(currVar, Class.currClass!!)
+        }else if(ctx.javaRefer() != null){
+            NativeAccessor(ctx.javaRefer().text, Class.currClass!!, currVar)
+        }else if(ctx.expression() != null){
+            ExpressionAccessor(ctx.expression(), currVar)
+        }else{
+            SimpleAccessor(currVar)
+        }
+    }
+
+    override fun visitSetter(ctx: mcfppParser.SetterContext): Any? {
+        Project.ctx = ctx
+        return if(ctx.functionBody() != null){
+            FunctionMutator(currVar, Class.currClass!!)
+        }else if(ctx.javaRefer() != null){
+            NativeMutator(ctx.javaRefer().text, Class.currClass!!, currVar)
+        }else if(ctx.expression() != null){
+            ExpressionMutator(ctx.expression(), currVar)
+        }else{
+            SimpleMutator(currVar)
+        }
     }
 
 //endregion
@@ -629,7 +675,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             val methods = clazz.methods
             var hasFind = false
             for(method in methods){
-                val mniRegister = method.getAnnotation(MNIRegister::class.java) ?: continue
+                val mniRegister = method.getAnnotation(MNIFunction::class.java) ?: continue
                 //解析MNIMethod注解成员
                 val readOnlyType = mniRegister.readOnlyParams.map {
                     MCFPPType.parseFromIdentifier(it.split(" ", limit = 2)[0], Namespace.currNamespaceField)
@@ -682,7 +728,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
         //解析成员
         //先解析函数和构造函数
         for (c in ctx.templateBody().templateMemberDeclaration()) {
-            if (c!!.templateMember().templateFunctionDeclaration() != null) {
+            if (c!!.templateMember().templateFunctionDeclaration() != null || c.templateMember().templateConstructorDeclaration() != null) {
                 visit(c)
             }
         }
@@ -709,7 +755,7 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
         DataTemplate.currTemplate = objectTemplate
         typeScope = objectTemplate.field
         //解析成员
-        //先解析函数和构造函数
+        //先解析函数
         for (c in ctx.templateBody().templateMemberDeclaration()) {
             if (c!!.templateMember().templateFunctionDeclaration() != null) {
                 visit(c)
@@ -750,6 +796,8 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             visit(ctx.templateFunctionDeclaration())
         } else if (ctx.templateFieldDeclaration() != null) {
             visit(ctx.templateFieldDeclaration())
+        } else if(ctx.templateConstructorDeclaration() != null) {
+            visit(ctx.templateConstructorDeclaration())
         } else{
             return null
         }
@@ -802,6 +850,15 @@ open class MCFPPFieldVisitor : mcfppParserBaseVisitor<Any?>() {
             return null
         }
         return `var`
+    }
+
+    override fun visitTemplateConstructorDeclaration(ctx: mcfppParser.TemplateConstructorDeclarationContext): Any {
+        Project.ctx = ctx
+        //类构造函数
+        //创建构造函数对象，注册函数
+        val f = DataTemplateConstructor(DataTemplate.currTemplate!!)
+        f.addParamsFromContext(ctx.normalParams())
+        return f
     }
 
     //endregion

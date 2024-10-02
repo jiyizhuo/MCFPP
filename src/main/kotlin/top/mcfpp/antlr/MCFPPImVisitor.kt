@@ -15,8 +15,15 @@ import top.mcfpp.type.MCFPPEnumType
 import top.mcfpp.type.MCFPPGenericClassType
 import top.mcfpp.type.MCFPPType
 import top.mcfpp.core.lang.MCFPPValue
+import top.mcfpp.core.lang.bool.MCBool
+import top.mcfpp.core.lang.bool.MCBoolConcrete
+import top.mcfpp.core.lang.bool.ReturnedMCBool
+import top.mcfpp.lib.Execute
 import top.mcfpp.lib.SbObject
 import top.mcfpp.model.*
+import top.mcfpp.model.accessor.FunctionAccessor
+import top.mcfpp.model.accessor.FunctionMutator
+import top.mcfpp.model.accessor.Property
 import top.mcfpp.model.field.GlobalField
 import top.mcfpp.model.function.*
 import top.mcfpp.model.function.Function
@@ -132,7 +139,7 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
                 LogProcessor.error("Duplicate defined variable name:" + ctx.Identifier().text)
             }
             try {
-                `var`.assign(init)
+                `var`.assignedBy(init)
             } catch (e: VariableConverseException) {
                 LogProcessor.error("Cannot convert " + init.javaClass + " to " + `var`.javaClass)
                 throw VariableConverseException()
@@ -172,7 +179,7 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
                 if (c.expression() != null) {
                     val init: Var<*> = MCFPPExprVisitor(if(type is MCFPPGenericClassType) type else null, if(type is MCFPPEnumType) type else null).visit(c.expression())!!
                     try {
-                        `var` = `var`.assign(init)
+                        `var` = `var`.assignedBy(init)
                     } catch (e: VariableConverseException) {
                         LogProcessor.error("Cannot convert " + init.javaClass + " to " + `var`.javaClass)
                         throw VariableConverseException(e)
@@ -217,7 +224,7 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
                 if(right !is MCFPPValue<*> && left.parent is DataTemplateObjectConcrete){
                     left.parent = (left.parent as DataTemplateObjectConcrete).toDynamic(true)
                 }
-                left.replacedBy(left.assign(right))
+                left.replacedBy(left.assignedBy(right))
             } catch (e: VariableConverseException) {
                 LogProcessor.error("Cannot convert " + right.javaClass + " to " + left.javaClass)
                 throw e
@@ -228,40 +235,6 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
         Function.addComment("expression end: " + ctx.text)
         return null
     }
-
-    /**
-     * 自加或自减语句
-     * TODO
-     * @param ctx the parse tree
-     */
-    /*
-    * override fun exitSelfAddOrMinusStatement(ctx: mcfppParser.SelfAddOrMinusStatementContext) {
-    *    Project.ctx = ctx
-    *    Function.addCommand("#" + ctx.text)
-    *    val re: Var? = Function.field.getVar(ctx.selfAddOrMinusExpression().Identifier().text)
-    *    if (re == null) {
-    *        LogProcessor.error("Undefined variable:" + ctx.selfAddOrMinusExpression().Identifier().text)
-    *        throw VariableNotDefineException()
-    *    }
-    *    if (ctx.selfAddOrMinusExpression().op.text.equals("++")) {
-    *        if (re is MCInt) {
-    *            if (re.isConcrete) {
-    *                re.value = re.value!! + 1
-    *            } else {
-    *                Function.addCommand(Commands.SbPlayerAdd(re, 1))
-    *            }
-    *        }
-    *    } else {
-    *        if (re is MCInt) {
-    *            if (re.isConcrete) {
-    *                re.value = re.value!! - 1
-    *            } else {
-    *                Function.addCommand(Commands.SbPlayerRemove(re, 1))
-    *            }
-    *        }
-    *    }
-    * }
-    */
 
     override fun visitExtensionFunctionDeclaration(ctx: mcfppParser.ExtensionFunctionDeclarationContext): Any? {
         //是扩展函数
@@ -429,7 +402,7 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
             parent as mcfppParser.IfStatementContext
             var exp = MCFPPExprVisitor().visit(parent.expression())
             if(exp is ReturnedMCBool){
-                exp = MCBool().assign(exp)
+                exp = MCBool().assignedBy(exp)
             }
             when(exp){
                 is MCBoolConcrete -> {
@@ -475,7 +448,7 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
             } else {
                 exp as ReturnedMCBool
                 val exp1 = MCBool()
-                exp1.assign(exp)
+                exp1.assignedBy(exp)
                 //给子函数开栈
                 Function.addCommand(
                     "execute " +
@@ -609,6 +582,12 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
         Function.addCommand("return 1")
         Function.currFunction = Function.currFunction.parent[0]
         Function.addComment("while loop end")
+        Function.currFunction.field.forEachVar {
+            if(it.trackLost){
+                it.trackLost = false
+                if(it is MCFPPValue<*>) it.toDynamic(true)
+            }
+        }
     }
 
     override fun visitDoWhileStatement(ctx: mcfppParser.DoWhileStatementContext): Any? {
@@ -720,6 +699,12 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
         Function.addCommand("return 1")
         Function.currFunction = Function.currFunction.parent[0]
         Function.addComment("do while end")
+        Function.currFunction.field.forEachVar {
+            if(it.trackLost){
+                it.trackLost = false
+                if(it is MCFPPValue<*>) it.toDynamic(true)
+            }
+        }
     }
 
 
@@ -861,6 +846,12 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
         Function.addCommand("data remove storage mcfpp:system " + Project.config.rootNamespace + ".stack_frame[0]")
         Function.addCommand("return 1")
         Function.currFunction = Function.currFunction.parent[0]
+        Function.currFunction.field.forEachVar {
+            if(it.trackLost){
+                it.trackLost = false
+                if(it is MCFPPValue<*>) it.toDynamic(true)
+            }
+        }
     }
 
     /**
@@ -949,6 +940,36 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
         return null
     }
 
+    //进入execute语句
+    override fun visitExecuteStatement(ctx: mcfppParser.ExecuteStatementContext): Any? {
+        val exec = Execute()
+        for (context in ctx.executeContext()){
+            var arg: Execute.WriteOnlyVar? = null
+            for (exp in context.executeExpression().`var`()){
+                if(arg == null){
+                    val qwq = exec.data.field.getVar(exp.text) as Execute.WriteOnlyVar?
+                    if(qwq == null){
+                        LogProcessor.error("Cannot find argument: ${exp.text}")
+                        continue
+                    }
+                    arg = qwq
+                }else{
+                    arg = arg.getData().field.getVar(exp.text) as Execute.WriteOnlyVar
+                }
+            }
+            val value = MCFPPExprVisitor().visit(context.expression())
+            arg?.assignedBy(value)
+        }
+        val execFunction = NoStackFunction("execute_" + UUID.randomUUID().toString(), Function.currFunction)
+        GlobalField.localNamespaces[execFunction.namespace]!!.field.addFunction(execFunction, false)
+        val l = Function.currFunction
+        Function.currFunction = execFunction
+        super.visitExecuteStatement(ctx)
+        Function.currFunction = l
+        Function.addCommand(exec.run(execFunction))
+        return null
+    }
+
     //region class
     override fun visitClassDeclaration(ctx: mcfppParser.ClassDeclarationContext): Any? {
         if(ctx.readOnlyParams() == null){
@@ -1016,24 +1037,45 @@ open class MCFPPImVisitor: mcfppParserBaseVisitor<Any?>() {
         Function.currFunction = Class.currClass!!.classPreInit
     }
 
-    override fun visitConstructorDeclaration(ctx: mcfppParser.ConstructorDeclarationContext): Any? {
+    override fun visitClassConstructorDeclaration(ctx: mcfppParser.ClassConstructorDeclarationContext): Any? {
         //是构造函数
-        enterConstructorDeclaration(ctx)
-        super.visitConstructorDeclaration(ctx)
-        exitConstructorDeclaration(ctx)
+        enterClassConstructorDeclaration(ctx)
+        super.visitClassConstructorDeclaration(ctx)
+        exitClassConstructorDeclaration(ctx)
         return null
     }
 
-    private fun enterConstructorDeclaration(ctx: mcfppParser.ConstructorDeclarationContext) {
+    private fun enterClassConstructorDeclaration(ctx: mcfppParser.ClassConstructorDeclarationContext) {
         Project.ctx = ctx
         val types = FunctionParam.parseNormalParamTypes(ctx.normalParams())
         val c = Class.currClass!!.getConstructorByString(types.typeToStringList())!!
         Function.currFunction = c
     }
 
-    private fun exitConstructorDeclaration(ctx: mcfppParser.ConstructorDeclarationContext) {
+    private fun exitClassConstructorDeclaration(ctx: mcfppParser.ClassConstructorDeclarationContext) {
         Project.ctx = ctx
         Function.currFunction = Class.currClass!!.classPreInit
+    }
+
+    private lateinit var currProperty: Property
+    override fun visitClassFieldDeclaration(ctx: mcfppParser.ClassFieldDeclarationContext): Any? {
+        val id = ctx.fieldDeclarationExpression().Identifier().text
+        currProperty = Class.currClass!!.field.getProperty(id)!!
+        return super.visitClassFieldDeclaration(ctx)
+    }
+
+    override fun visitGetter(ctx: mcfppParser.GetterContext): Any? {
+        if(ctx.functionBody() != null){
+            Function.currFunction = (currProperty.accessor as FunctionAccessor).function
+        }
+        return super.visitGetter(ctx)
+    }
+
+    override fun visitSetter(ctx: mcfppParser.SetterContext?): Any? {
+        if(ctx!!.functionBody() != null){
+            Function.currFunction = (currProperty.mutator as FunctionMutator).function
+        }
+        return super.visitSetter(ctx)
     }
     //endregion
 

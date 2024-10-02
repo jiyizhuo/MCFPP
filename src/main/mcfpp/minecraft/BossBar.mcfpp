@@ -1,0 +1,41 @@
+@From<"top.mcfpp.mni.minecraft.BossBarData">
+data BossBar{
+
+    string id;
+
+    int max { get = top.mcfpp.mni.minecraft.BossBarData; set = top.mcfpp.mni.minecraft.BossBarData; };
+    int value { get = top.mcfpp.mni.minecraft.BossBarData; set = top.mcfpp.mni.minecraft.BossBarData; };
+    bool visible { get = top.mcfpp.mni.minecraft.BossBarData; set = top.mcfpp.mni.minecraft.BossBarData; };
+
+    constructor(string id){
+        this.id = id;
+        this.name = (text)id;
+    }
+
+    constructor(string id, string name){
+        this.id = id;
+        this.name = name;
+    }
+}
+
+@From<"top.mcfpp.mni.minecraft.BossBarData">
+object data BossBar{
+}
+
+enum BossBarStyle{
+    PROGRESS = "progress",
+    NOTCHED_6 = "notched_6",
+    NOTCHED_10 = "notched_10",
+    NOTCHED_12 = "notched_12",
+    NOTCHED_20 = "notched_20"
+}
+
+enum BossBarColor{
+    PINK = "pink",
+    BLUE = "blue",
+    RED = "red",
+    GREEN = "green",
+    YELLOW = "yellow",
+    PURPLE = "purple",
+    WHITE = "white"
+}

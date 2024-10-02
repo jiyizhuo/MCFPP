@@ -186,9 +186,22 @@ open class Function : Member, FieldContainer, Serializable {
     var owner : CompoundData? = null
 
     /**
+     * 函数的内部函数
+     */
+    val innerFunction: ArrayList<Function> = ArrayList()
+
+    /**
      * 在什么东西里面
      */
-    var ownerType : OwnerType = OwnerType.NONE
+    var ownerType : OwnerType
+        get() {
+            return when(owner){
+                is Class -> OwnerType.CLASS
+                is DataTemplate -> OwnerType.TEMPLATE
+                null -> OwnerType.NONE
+                else -> OwnerType.BASIC
+            }
+        }
 
     /**
      * 含有缺省参数
@@ -280,10 +293,13 @@ open class Function : Member, FieldContainer, Serializable {
             return re
         }
 
-    var context: FunctionBodyContext? = null
+    var ast: FunctionBodyContext? = null
 
+    var context: FunctionContext = FunctionContext()
 
     open val compiledFunctions: HashMap<List<Any?>, Function> = HashMap()
+
+    val staticRefValue: HashMap<String, Var<*>> = HashMap()
 
     /**
      * 创建一个全局函数，它有指定的命名空间
@@ -304,7 +320,7 @@ open class Function : Member, FieldContainer, Serializable {
         }else{
             this.returnVar = buildReturnVar(returnType)
         }
-        this.context = context
+        this.ast = context
     }
 
     /**
@@ -322,7 +338,7 @@ open class Function : Member, FieldContainer, Serializable {
         field = FunctionField(cls.field, this)
         this.returnType = returnType
         this.returnVar = buildReturnVar(returnType)
-        this.context = context
+        this.ast = context
     }
 
     /**
@@ -343,7 +359,7 @@ open class Function : Member, FieldContainer, Serializable {
         this.returnVar = buildReturnVar(returnType)
         this.isAbstract = true
         this.accessModifier = Member.AccessModifier.PUBLIC
-        this.context = context
+        this.ast = context
     }
 
     /**
@@ -361,7 +377,7 @@ open class Function : Member, FieldContainer, Serializable {
         field = FunctionField(template.field, this)
         this.returnType = returnType
         this.returnVar = buildReturnVar(returnType)
-        this.context = context
+        this.ast = context
     }
 
     constructor(function: Function){
@@ -378,7 +394,7 @@ open class Function : Member, FieldContainer, Serializable {
         this.returnVar = function.returnVar.clone()
         this.isAbstract = function.isAbstract
         this.accessModifier = function.accessModifier
-        this.context = function.context
+        this.ast = function.ast
     }
 
     /**
@@ -458,7 +474,8 @@ open class Function : Member, FieldContainer, Serializable {
      * @param caller 函数的调用者
      */
     open fun invoke(normalArgs: ArrayList<Var<*>>, caller: CanSelectMember?){
-        if(context != null){
+        if(ast != null){
+            //函数参数已知条件下的编译
             val values = normalArgs.map { if(it is MCFPPValue<*>) it.value else null }
             if(values.any { it != null }){
                 if(compiledFunctions.containsKey(values)){
@@ -472,9 +489,9 @@ open class Function : Member, FieldContainer, Serializable {
                     }
                 }
                 cf.identifier = this.identifier + "_" + compiledFunctions.size
-                cf.context = null
+                cf.ast = null
                 cf.runInFunction {
-                    MCFPPImVisitor().visitFunctionBody(context!!)
+                    MCFPPImVisitor().visitFunctionBody(ast!!)
                 }
                 compiledFunctions[values] = cf
                 cf.invoke(normalArgs, caller)
@@ -482,11 +499,31 @@ open class Function : Member, FieldContainer, Serializable {
             }
         }
         when(caller){
-            is CompoundDataCompanion -> invoke(normalArgs, callerClassP = null)
-            null -> invoke(normalArgs, callerClassP = null)
-            is ClassPointer -> invoke(normalArgs, callerClassP = caller)
-            is Var<*> -> invoke(normalArgs, caller = caller)
+            is MCFPPType, is DataTemplateObject, null -> invoke(normalArgs)
+            is ClassPointer -> invoke(normalArgs, caller)
+            is Var<*> -> invoke(normalArgs, caller)
         }
+    }
+
+    protected open fun invoke(normalArgs: ArrayList<Var<*>>){
+        //给函数开栈
+        addCommand("data modify storage mcfpp:system ${Project.config.rootNamespace}.stack_frame prepend value {}")
+        //参数传递
+        argPass(normalArgs)
+        //函数调用的命令
+        addCommand("function $namespaceID")
+        //static关键字，将值传回
+        staticArgRef(normalArgs)
+        //销毁指针，释放堆内存
+        for (p in field.allVars){
+            if (p is ClassPointer){
+                p.dispose()
+            }
+        }
+        //调用完毕，将子函数的栈销毁
+        addCommand("data remove storage mcfpp:system " + Project.config.rootNamespace + ".stack_frame[0]")
+        //取出栈内的值
+        fieldRestore()
     }
 
     /**
@@ -495,13 +532,13 @@ open class Function : Member, FieldContainer, Serializable {
      * @param normalArgs
      * @param caller
      */
-    open fun invoke(normalArgs: ArrayList<Var<*>>, caller: Var<*>){
+    protected open fun invoke(normalArgs: ArrayList<Var<*>>, caller: Var<*>){
         //基本类型
         addComment("[Function ${this.namespaceID}] Function Pushing and argument passing")
         //给函数开栈
         addCommand("data modify storage mcfpp:system ${Project.config.rootNamespace}.stack_frame prepend value {}")
         //传入this参数
-        field.putVar("this",caller,true)
+        field.putVar("this", caller, true)
         //参数传递
         argPass(normalArgs)
         addCommand("function " + this.namespaceID)
@@ -527,20 +564,16 @@ open class Function : Member, FieldContainer, Serializable {
      * @see top.mcfpp.antlr.MCFPPExprVisitor.visitVar
      */
     @InsertCommand
-    open fun invoke(normalArgs: ArrayList<Var<*>>, callerClassP: ClassPointer?) {
+    protected open fun invoke(normalArgs: ArrayList<Var<*>>, callerClassP: ClassPointer) {
         //给函数开栈
         addCommand("data modify storage mcfpp:system ${Project.config.rootNamespace}.stack_frame prepend value {}")
         //参数传递
         argPass(normalArgs)
         //函数调用的命令
-        when(callerClassP){
-            is ClassPointer -> {
-                addCommands(Commands.selectRun(callerClassP,Command.build("function mcfpp.dynamic:function with entity @s data.functions.$identifier")))
-            }
-            null -> {
-                addCommand("function $namespaceID")
-            }
-            else -> TODO()
+        if(callerClassP is ClassPointerConcrete){
+            addCommands(Commands.selectRun(callerClassP,Command.build("function $namespaceID")))
+        }else{
+            addCommands(Commands.selectRun(callerClassP,Command.build("function mcfpp.dynamic:function with entity @s data.functions.$identifier")))
         }
         //static关键字，将值传回
         staticArgRef(normalArgs)
@@ -557,14 +590,31 @@ open class Function : Member, FieldContainer, Serializable {
     }
 
     /**
-     * 调用这个函数。这个函数是结构体的成员方法
+     * 调用这个函数。这个函数是数据模板的成员方法
      *
-     * @param args
-     * @param struct
+     * @param normalArgs 传入的参数
+     * @param data 数据模板的实例
      */
-    //open fun invoke(/*readOnlyArgs: ArrayList<Var<*>>, */normalArgs: ArrayList<Var<*>>, struct: IntTemplateBase){
-    //    TODO()
-    //}
+    protected open fun invoke(normalArgs: ArrayList<Var<*>>, data: DataTemplateObject){
+        //给函数开栈
+        addCommand("data modify storage mcfpp:system ${Project.config.rootNamespace}.stack_frame prepend value {}")
+        //参数传递
+        argPass(normalArgs)
+        //函数调用的命令
+        addCommand("function $namespaceID")
+        //static关键字，将值传回
+        staticArgRef(normalArgs)
+        //销毁指针，释放堆内存
+        for (p in field.allVars){
+            if (p is ClassPointer){
+                p.dispose()
+            }
+        }
+        //调用完毕，将子函数的栈销毁
+        addCommand("data remove storage mcfpp:system " + Project.config.rootNamespace + ".stack_frame[0]")
+        //取出栈内的值
+        fieldRestore()
+    }
 
     /**
      * 在创建函数栈，调用函数之前，将参数传递到函数栈中
@@ -581,7 +631,10 @@ open class Function : Member, FieldContainer, Serializable {
             val tg = normalArgs[i].implicitCast(this.normalParams[i].type)
             //参数传递和子函数的参数进栈
             val p = field.getVar(this.normalParams[i].identifier)!!
-            field.putVar(p.identifier, p.assign(tg), true)
+            p.isConst = false
+            val pp = p.assignedBy(tg)
+            if(!this.normalParams[i].isStatic) pp.isConst = true
+            field.putVar(p.identifier, pp, true)
         }
     }
 
@@ -600,22 +653,7 @@ open class Function : Member, FieldContainer, Serializable {
                     hasAddComment = true
                 }
                 //如果是static参数
-                if (args[i] is MCInt) {
-                    when(normalParams[i].typeIdentifier){
-                        MCFPPBaseType.Int.typeName -> {
-                            //如果是int取出到记分板
-                            addCommand(
-                                "execute " +
-                                        "store result score ${(args[i] as MCInt).name} ${(args[i] as MCInt).sbObject} " +
-                                        "run data get storage mcfpp:system ${Project.config.rootNamespace}.stack_frame[0].${normalParams[i].identifier} int 1 "
-                            )
-                        }
-                        else -> {
-                            //TODO 其他参数类型
-                            //引用类型，不用还原
-                        }
-                    }
-                }
+                args[i].assignedBy(field.getVar(normalParams[i].identifier)!!)
             }
         }
     }
@@ -659,7 +697,7 @@ open class Function : Member, FieldContainer, Serializable {
             LogProcessor.error("Function $identifier has no return value but tried to return a ${v.type}")
             return
         }
-        returnVar.assign(v)
+        returnVar.assignedBy(v)
     }
 
     /**
@@ -940,4 +978,11 @@ open class Function : Member, FieldContainer, Serializable {
 
         val cache = ArrayList<String>()
     }
+}
+
+/**
+ * 描述一个函数执行的上下文。函数执行的上下文包括函数的执行者，执行坐标等。
+ */
+class FunctionContext{
+    var caller: CanSelectMember? = null
 }

@@ -5,6 +5,7 @@ import net.querz.nbt.tag.CompoundTag
 import top.mcfpp.Project
 import top.mcfpp.command.Command
 import top.mcfpp.command.Commands
+import top.mcfpp.model.accessor.SimpleAccessor
 import top.mcfpp.type.MCFPPBaseType
 import top.mcfpp.type.MCFPPNBTType
 import top.mcfpp.type.MCFPPType
@@ -12,6 +13,7 @@ import top.mcfpp.mni.NBTDictionaryData
 import top.mcfpp.model.CompoundData
 import top.mcfpp.model.FieldContainer
 import top.mcfpp.model.Member
+import top.mcfpp.model.accessor.Property
 import top.mcfpp.model.function.Function
 import top.mcfpp.type.MCFPPDictType
 import top.mcfpp.util.LogProcessor
@@ -19,7 +21,7 @@ import top.mcfpp.util.TextTranslator
 import top.mcfpp.util.TextTranslator.translate
 import java.util.*
 
-open class NBTDictionary : NBTBasedData<CompoundTag> {
+open class NBTDictionary : NBTBasedData {
 
     override var type: MCFPPType = MCFPPDictType(MCFPPBaseType.Any)
 
@@ -49,7 +51,7 @@ open class NBTDictionary : NBTBasedData<CompoundTag> {
      * 将b中的值赋值给此变量
      * @param b 变量的对象
      */
-    override fun doAssign(b: Var<*>): NBTDictionary {
+    override fun doAssignedBy(b: Var<*>): NBTDictionary {
         when (b) {
             is NBTDictionary -> {
                 return assignCommand(b) as NBTDictionary
@@ -61,6 +63,11 @@ open class NBTDictionary : NBTBasedData<CompoundTag> {
             }
         }
     }
+
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        return !b.implicitCast(type).isError
+    }
+
 
     override fun getMemberVar(key: String, accessModifier: Member.AccessModifier): Pair<Var<*>?, Boolean> {
         TODO("Not yet implemented")
@@ -75,12 +82,12 @@ open class NBTDictionary : NBTBasedData<CompoundTag> {
         return data.field.getFunction(key,readOnlyParams , normalParams) to true
     }
 
-    override fun getByIndex(index: Var<*>): Accessor {
-        return Accessor(if(index is MCString){
-            super.getByStringIndex(index)
+    override fun getByIndex(index: Var<*>): PropertyVar {
+        return if(index is MCString){
+            PropertyVar(Property.buildSimpleProperty(super.getByStringIndex(index)), this)
         }else{
             throw IllegalArgumentException("Index must be a string")
-        })
+        }
     }
 
     companion object{
@@ -95,7 +102,7 @@ open class NBTDictionary : NBTBasedData<CompoundTag> {
 
 open class NBTDictionaryConcrete : NBTDictionary, MCFPPValue<CompoundTag> {
 
-    override var value: CompoundTag
+    override lateinit var value: CompoundTag
 
     /**
      * 创建一个固定的dict
@@ -169,20 +176,20 @@ open class NBTDictionaryConcrete : NBTDictionary, MCFPPValue<CompoundTag> {
     }
 
 
-    override fun getByIndex(index: Var<*>): Accessor {
-        return Accessor(if(index is MCString){
+    override fun getByIndex(index: Var<*>): PropertyVar {
+        return if(index is MCString){
             if(index is MCStringConcrete){
                 if(value.containsKey(index.value.valueToString())){
                     throw IndexOutOfBoundsException("Index out of bounds")
                 }else{
-                    NBTBasedDataConcrete(value[index.value.valueToString()])
+                    PropertyVar(Property.buildSimpleProperty(NBTBasedDataConcrete(value[index.value.valueToString()])), this)
                 }
             }else {
-                super.getByStringIndex(index)
+                PropertyVar(Property.buildSimpleProperty(super.getByStringIndex(index)), this)
             }
         }else{
             throw IllegalArgumentException("Index must be a string")
-        })
+        }
     }
 
 

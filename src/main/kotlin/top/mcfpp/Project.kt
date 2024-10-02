@@ -335,7 +335,7 @@ object Project {
             n.field.forEachObject { c->
                 run {
                     if(c is ObjectClass){
-                        c.classPreInit.invoke(ArrayList(), callerClassP =  null)
+                        c.classPreInit.invoke(ArrayList(), null)
                     }
                 }
             }
@@ -386,7 +386,7 @@ data class ProjectConfig(
     var version: String? = null,
 
     /**
-     * 工程的名字
+     * 工程的默认命名空间
      */
     var rootNamespace: String = "default",
 
@@ -414,6 +414,7 @@ data class ProjectConfig(
      * 工程的根目录
      */
     var root: Path = Path.of("."),
+
     /**
      * 工程包含的所有文件
      */

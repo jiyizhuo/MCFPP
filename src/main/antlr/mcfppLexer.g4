@@ -3,7 +3,6 @@ lexer grammar mcfppLexer;
 import unicodeClass;
 
 //Base Character Set
-WAVE:'~';
 RESERVED: '...' ;
 DOT: '.' ;
 COMMA: ',' ;
@@ -60,6 +59,7 @@ SINGLE_QUOTE: '\'' ;
 //BIT_AND_ASSIGN:                   '&=';
 //BIT_XOR_ASSIGN:                   '^=';
 //BIT_OR_ASSIGN:                    '|=';
+PIPE: '|';
 TRIPLE_QUOTE_OPEN: '"""' -> pushMode(MultiLineString) ;
 
 //KeyWords
@@ -111,6 +111,9 @@ CONSTRUCTOR:'constructor';
 
 GLOBAL:'global';
 VAR:'var';
+
+GET:'get';
+SET:'set';
 
 NAMESPACE:  'namespace';
 VEC:        'vec';
@@ -193,8 +196,12 @@ FloatConstant
     ;
 
 RelativeValue
-    :   '~' IntegerConstant
-    |   '~' FloatConstant
+    :   '~'
+    |   '^'
+    |   '~' IntegerConstant?
+    |   '~' FloatConstant?
+    |   '^' IntegerConstant?
+    |   '^' FloatConstant?
     ;
 
 BooleanConstant

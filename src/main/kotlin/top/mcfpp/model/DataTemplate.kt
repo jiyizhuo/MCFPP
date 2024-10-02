@@ -9,7 +9,10 @@ import top.mcfpp.core.lang.Var
 import top.mcfpp.type.MCFPPDataTemplateType
 import top.mcfpp.mni.DataObjectData
 import top.mcfpp.model.field.CompoundDataField
+import top.mcfpp.model.function.ClassConstructor
+import top.mcfpp.model.function.DataTemplateConstructor
 import top.mcfpp.model.function.Function
+import top.mcfpp.type.MCFPPType
 import top.mcfpp.util.LogProcessor
 import kotlin.collections.ArrayList
 
@@ -27,6 +30,11 @@ import kotlin.collections.ArrayList
  * 除此之外，结构体是一种值类型的变量，而不是引用类型。因此在赋值的时候会把整个结构体进行一次赋值。
  */
 open class DataTemplate : FieldContainer, CompoundData {
+
+    /**
+     * 构造函数
+     */
+    var constructors: ArrayList<DataTemplateConstructor> = ArrayList()
 
     private val reference: ArrayList<DataTemplate> = ArrayList()
 
@@ -73,7 +81,7 @@ open class DataTemplate : FieldContainer, CompoundData {
     fun getDefaultValue(): CompoundTag{
         val tag = CompoundTag()
         for (member in field.allVars){
-            tag.put(member.identifier, Var.getDefaultValue(member.type))
+            tag.put(member.identifier, member.type.defaultValue())
         }
         return tag
     }
@@ -83,23 +91,52 @@ open class DataTemplate : FieldContainer, CompoundData {
      * @param member 要添加的成员
      */
     override fun addMember(member: Member): Boolean {
-        return if (member is Function) {
-            field.addFunction(member, false)
-        } else if (member is Var<*>) {
-            if(member is DataTemplateObject){
-                if(ifInfinitiveReference(member.templateType)) {
-                    LogProcessor.error("Infinitive reference: ${member.templateType.identifier} -> ${this.identifier}")
-                    return field.putVar(member.identifier, UnknownVar(member.identifier))
+        return when(member){
+            is DataTemplateConstructor -> {
+                if (constructors.contains(member)) {
+                    return false
+                } else {
+                    constructors.add(member)
+                    return true
                 }
             }
-            field.putVar(member.identifier, member)
-        } else {
-            TODO()
+            is Function -> {
+                field.addFunction(member, false)
+            }
+            is Var<*> -> {
+                if(member is DataTemplateObject){
+                    if(ifInfinitiveReference(member.templateType)) {
+                        LogProcessor.error("Infinitive reference: ${member.templateType.identifier} -> ${this.identifier}")
+                        return field.putVar(member.identifier, UnknownVar(member.identifier))
+                    }
+                }
+                field.putVar(member.identifier, member)
+            }
+            else -> TODO()
         }
     }
 
     fun ifInfinitiveReference(template: DataTemplate): Boolean{
         return template == this && reference.any { it == template || it.ifInfinitiveReference(template) }
+    }
+
+    fun getConstructorByString(normalParams: List<String>): DataTemplateConstructor?{
+        return getConstructorByType(
+            ArrayList(normalParams.map { MCFPPType.parseFromIdentifier(it, field) })
+        )
+    }
+
+    /**
+     * 根据参数列表获取一个类的构造函数
+     * @return 返回这个类的参数
+     */
+    fun getConstructorByType(normalParams: List<MCFPPType>): DataTemplateConstructor? {
+        for (f in constructors) {
+            if(f.isSelf(this, normalParams)){
+                return f
+            }
+        }
+        return null
     }
 
     companion object{

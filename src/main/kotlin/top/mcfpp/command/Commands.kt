@@ -1,20 +1,21 @@
 package top.mcfpp.command
 
 import net.querz.nbt.io.SNBTUtil
+import net.querz.nbt.tag.IntArrayTag
+import net.querz.nbt.tag.StringTag
 import net.querz.nbt.tag.Tag
 import top.mcfpp.Project
-import top.mcfpp.core.lang.ClassPointer
-import top.mcfpp.core.lang.EntityVar
-import top.mcfpp.core.lang.EntityVarConcrete
-import top.mcfpp.core.lang.MCInt
+import top.mcfpp.core.lang.*
 import top.mcfpp.type.MCFPPClassType
 import top.mcfpp.lib.NBTPath
 import top.mcfpp.model.CanSelectMember
 import top.mcfpp.model.ObjectClass
+import top.mcfpp.model.field.GlobalField
 import top.mcfpp.model.function.Function
 import top.mcfpp.model.function.NoStackFunction
 import top.mcfpp.util.Utils
 import java.util.*
+import kotlin.math.truncate
 
 /**
  * 命令总类，提供了大量用于生成命令的方法。默认提供了一些可替换的位点
@@ -111,6 +112,9 @@ object Commands {
     fun selectRun(a : CanSelectMember, command: Command, hasExecuteRun: Boolean = true) : Array<Command>{
         val final = when(a){
             is ClassPointer -> {
+                if(a.identifier == "this"){
+                    return arrayOf(command)
+                }
                 val qwq = arrayOf(
                     Command.build("data modify storage entity ${ClassPointer.tempItemEntityUUID} Thrower set from storage mcfpp:system ${Project.config.rootNamespace}.stack_frame[${a.stackIndex}].${a.identifier}"),
                     Command.build("execute as ${ClassPointer.tempItemEntityUUID} on origin")
@@ -137,6 +141,9 @@ object Commands {
     fun selectRun(a : CanSelectMember, hasExecuteRun: Boolean = true) : Array<Command>{
         val final = when(a){
             is ClassPointer -> {
+                if(a.identifier == "this"){
+                    return arrayOf(Command.build(""))
+                }
                 val qwq = arrayOf(
                     Command.build("data modify storage entity ${ClassPointer.tempItemEntityUUID} Thrower set from storage mcfpp:system ${Project.config.rootNamespace}.stack_frame[${a.stackIndex}].${a.identifier}"),
                     Command.build("execute as ${ClassPointer.tempItemEntityUUID} on origin")
@@ -162,34 +169,50 @@ object Commands {
         return selectRun(a, Command.build(command), hasExecuteRun)
     }
 
-    /**
-     * 将此命令以宏命令的方式调用。宏命令的转换方式参考[Command.toMacro]
-     *
-     * @return 用来调用 执行宏参数的函数 的function命令
-     */
-    fun buildMacroCommand(command: Command) : Command{
-        val f = UUID.randomUUID().toString()
-        Project.macroFunction[f] = command.toMacro()
-        return Command.build("function mcfpp:dynamic/$f")
-    }
-
-    fun fakeFunction(parent: Function , operation: () -> Unit) : Array<Command>{
+    fun fakeFunction(parent: Function , operation: (fakeFunction: Function) -> Unit) : Array<Command>{
         val l = Function.currFunction
         val f = NoStackFunction("", parent)
         Function.currFunction = f
-        operation()
+        operation(f)
         Function.currFunction = l
         return f.commands.toTypedArray()
     }
 
+    fun tempFunction(parent: Function, operation: (tempFunction: Function) -> Unit) : Pair<Command, Function>{
+        val l = Function.currFunction
+        val f = NoStackFunction(parent.identifier + "_temp_" + UUID.randomUUID().toString(), parent)
+        GlobalField.localNamespaces[Project.currNamespace]!!.field.addFunction(f, false)
+        Function.currFunction = f
+        operation(f)
+        Function.currFunction = l
+        return function(f) to f
+    }
+
     fun runAsEntity(entityVar: EntityVar, command: Command): Array<Command>{
         return if(entityVar is EntityVarConcrete){
-            arrayOf(Command("execute ${Utils.fromNBTArrayUUID(entityVar.value)} run").build(command))
+            if(!entityVar.isName){
+                arrayOf(Command("execute as ${Utils.fromNBTArrayUUID(entityVar.value as IntArrayTag)} run").build(command))
+            }else{
+                arrayOf(Command("execute as ${(entityVar.value as StringTag).value} run").build(command))
+            }
         }else{
-            arrayOf(
-                Command("data modify storage entity ${ClassPointer.tempItemEntityUUID} Thrower set from").build(entityVar.nbtPath.toCommandPart()),
-                Command("execute as ${ClassPointer.tempItemEntityUUID} on origin run").build(command)
-            )
+            if(!entityVar.isName){
+                arrayOf(
+                    Command("data modify storage entity ${ClassPointer.tempItemEntityUUID} Thrower set from").build(entityVar.nbtPath.toCommandPart()),
+                    Command("execute as ${ClassPointer.tempItemEntityUUID} on origin run").build(command)
+                )
+            }else{
+                Command("execute as").buildMacro(entityVar).build("run").build(command).buildMacroFunction()
+            }
+        }
+    }
+
+    fun runAsEntity(selector: SelectorVar, command: Command): Array<Command>{
+        val c = Command("execute as").build(selector.value.toCommandPart()).build("run").build(command)
+        return if(c.isMacro){
+            c.buildMacroFunction()
+        }else{
+            arrayOf(c)
         }
     }
 }

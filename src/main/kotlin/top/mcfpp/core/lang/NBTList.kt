@@ -10,6 +10,7 @@ import top.mcfpp.exception.VariableConverseException
 import top.mcfpp.mni.NBTListConcreteData
 import top.mcfpp.mni.NBTListData
 import top.mcfpp.model.*
+import top.mcfpp.model.accessor.Property
 import top.mcfpp.model.function.Function
 import top.mcfpp.model.function.NativeFunction
 import top.mcfpp.model.function.UnknownFunction
@@ -25,7 +26,7 @@ import java.util.*
 /**
  * 表示一个列表类型。基于NBTBasedData实现。
  */
-open class NBTList : NBTBasedData<ListTag<*>> {
+open class NBTList : NBTBasedData {
 
     final override var type: MCFPPType
 
@@ -67,22 +68,24 @@ open class NBTList : NBTBasedData<ListTag<*>> {
         this.genericType = (type as MCFPPListType).generic
     }
 
-    override fun doAssign(b: Var<*>): NBTList {
+    override fun doAssignedBy(b: Var<*>): NBTList {
         return when (b) {
             is NBTList -> assignCommand(b)
-            is NBTBasedDataConcrete<*> -> {
+            is NBTBasedDataConcrete -> {
                 if (b.nbtType == this.nbtType) {
-                    assignCommand(b as NBTBasedDataConcrete<ListTag<*>>)
+                    assignCommand(b)
                 } else {
-                    throw VariableConverseException()
+                    LogProcessor.error(TextTranslator.ASSIGN_ERROR.translate(b.type.typeName, type.typeName))
+                    return this
                 }
             }
 
-            is NBTBasedData<*> -> {
+            is NBTBasedData -> {
                 if (b.nbtType == this.nbtType) {
-                    assignCommand(b as NBTBasedData<ListTag<*>>)
+                    assignCommand(b)
                 } else {
-                    throw VariableConverseException()
+                    LogProcessor.error(TextTranslator.ASSIGN_ERROR.translate(b.type.typeName, type.typeName))
+                    return this
                 }
             }
 
@@ -93,22 +96,31 @@ open class NBTList : NBTBasedData<ListTag<*>> {
         }
     }
 
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        if(!b.implicitCast(type).isError) return true
+        if(b is NBTBasedData){
+            return b.nbtType == this.nbtType
+        }
+        return false
+    }
+
+
     @InsertCommand
-    override fun assignCommand(a: NBTBasedData<ListTag<*>>) : NBTList{
+    override fun assignCommand(a: NBTBasedData) : NBTList{
         nbtType = a.nbtType
         if (parentClass() != null){
             val b = if(a.parentClass() != null){
                 a.getTempVar()
             }else a
             val final = Commands.selectRun(parent!!)
-            if (b is NBTBasedDataConcrete<*>) {
+            if (b is NBTBasedDataConcrete) {
                 //对类中的成员的值进行修改
                 if(final.size == 2){
                     Function.addCommand(final[0])
                 }
-                final.last().build(Commands.dataSetValue(nbtPath, b.value as Tag<*>))
+                final.last().build(Commands.dataSetValue(nbtPath, b.value))
                 if(final.last().isMacro){
-                    Function.addCommand(Commands.buildMacroCommand(final.last()))
+                    Function.addCommands(final.last().buildMacroFunction())
                 }else{
                     Function.addCommand(final.last())
                 }
@@ -119,7 +131,7 @@ open class NBTList : NBTBasedData<ListTag<*>> {
                 }
                 final.last().build(Commands.dataSetFrom(nbtPath, b.nbtPath))
                 if(final.last().isMacro){
-                    Function.addCommand(Commands.buildMacroCommand(final.last()))
+                    Function.addCommands(final.last().buildMacroFunction())
                 }else{
                     Function.addCommand(final.last())
                 }
@@ -134,7 +146,7 @@ open class NBTList : NBTBasedData<ListTag<*>> {
                 }
                 final.last().build(Commands.dataSetFrom(nbtPath, a.nbtPath))
                 if(final.last().isMacro){
-                    Function.addCommand(Commands.buildMacroCommand(final.last()))
+                    Function.addCommands(final.last().buildMacroFunction())
                 }else{
                     Function.addCommand(final.last())
                 }
@@ -190,12 +202,13 @@ open class NBTList : NBTBasedData<ListTag<*>> {
         return re to true
     }
 
-    override fun getByIndex(index: Var<*>): Accessor {
-        return Accessor(if(index is MCInt){
+    override fun getByIndex(index: Var<*>): PropertyVar {
+        return PropertyVar(
+            Property.buildSimpleProperty(if(index is MCInt){
             super.getByIntIndex(index)
         }else{
             throw IllegalArgumentException("Index must be a int")
-        })
+        }), this)
     }
 
     companion object {
@@ -212,14 +225,12 @@ open class NBTList : NBTBasedData<ListTag<*>> {
 
 /**
  *
- * @param E 没有用，但是不要随便删这个类型形参，会把NBTListConcreteData类弄坏，我也不知道为什么qwq
- *
  * 2024.7.12：我试过了，是真的，会坏
  *
  */
-class NBTListConcrete<E>: NBTList, MCFPPValue<ListTag<*>> {
+class NBTListConcrete: NBTList, MCFPPValue<ListTag<*>> {
 
-    override var value: ListTag<*>
+    override lateinit var value: ListTag<*>
 
     /**
      * 创建一个固定的list
@@ -245,11 +256,11 @@ class NBTListConcrete<E>: NBTList, MCFPPValue<ListTag<*>> {
     }
 
 
-    constructor(v: NBTListConcrete<E>) : super(v){
+    constructor(v: NBTListConcrete) : super(v){
         this.value = v.value
     }
 
-    override fun clone(): NBTListConcrete<E> {
+    override fun clone(): NBTListConcrete {
         return NBTListConcrete(this)
     }
 
@@ -293,8 +304,9 @@ class NBTListConcrete<E>: NBTList, MCFPPValue<ListTag<*>> {
         }
     }
 
-    override fun getByIndex(index: Var<*>): Accessor {
-        return Accessor(if(index is MCInt){
+    override fun getByIndex(index: Var<*>): PropertyVar {
+        return PropertyVar(
+            Property.buildSimpleProperty (if(index is MCInt){
             if(index is MCIntConcrete){
                 if(index.value >= value.size()){
                     throw IndexOutOfBoundsException("Index out of bounds")
@@ -307,7 +319,7 @@ class NBTListConcrete<E>: NBTList, MCFPPValue<ListTag<*>> {
             }
         }else{
             throw IllegalArgumentException("Index must be a int")
-        })
+        }), this)
     }
 
     override fun toString(): String {
@@ -345,7 +357,7 @@ class NBTListConcrete<E>: NBTList, MCFPPValue<ListTag<*>> {
             data.getNativeFromClass(NBTListConcreteData::class.java)
         }
 
-        val empty = NBTListConcrete<Any>(ListTag.createUnchecked(IntTag::class.java), "empty", MCFPPBaseType.Any)
+        val empty = NBTListConcrete(ListTag.createUnchecked(IntTag::class.java), "empty", MCFPPBaseType.Any)
 
     }
 }

@@ -29,10 +29,10 @@ class MCFPPNBTType {
             NBTBasedDataConcrete(clazz, IntTag(0), identifier)
 
         override fun buildUnConcrete(identifier: String, container: FieldContainer): Var<*> =
-            NBTBasedData<Tag<*>>(container, identifier)
+            NBTBasedData(container, identifier)
 
-        override fun buildUnConcrete(identifier: String): Var<*> = NBTBasedData<Tag<*>>(identifier)
-        override fun buildUnConcrete(identifier: String, clazz: Class): Var<*> = NBTBasedData<Tag<*>>(clazz, identifier)
+        override fun buildUnConcrete(identifier: String): Var<*> = NBTBasedData(identifier)
+        override fun buildUnConcrete(identifier: String, clazz: Class): Var<*> = NBTBasedData(clazz, identifier)
 
     }
 }
@@ -51,9 +51,9 @@ class MCFPPListType(
         val regex = Regex("^list\\(.+\\)$") //TODO：这个不一定能匹配得到嵌套的内容！
     }
 
-    override fun build(identifier: String, container: FieldContainer): Var<*> = NBTListConcrete<Any>(container, ListTag(IntTag::class.java), identifier, generic)
-    override fun build(identifier: String): Var<*> = NBTListConcrete<Any>(ListTag(IntTag::class.java), identifier, generic)
-    override fun build(identifier: String, clazz: Class): Var<*> = NBTListConcrete<Any>(clazz, ListTag(IntTag::class.java), identifier, generic)
+    override fun build(identifier: String, container: FieldContainer): Var<*> = NBTListConcrete(container, ListTag(IntTag::class.java), identifier, generic)
+    override fun build(identifier: String): Var<*> = NBTListConcrete(ListTag(IntTag::class.java), identifier, generic)
+    override fun build(identifier: String, clazz: Class): Var<*> = NBTListConcrete(clazz, ListTag(IntTag::class.java), identifier, generic)
     override fun buildUnConcrete(identifier: String, container: FieldContainer): Var<*> = NBTList(container, identifier, generic)
     override fun buildUnConcrete(identifier: String): Var<*> = NBTList(identifier, generic)
     override fun buildUnConcrete(identifier: String, clazz: Class): Var<*> = NBTList(clazz, identifier, generic)

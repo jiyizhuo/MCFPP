@@ -1,10 +1,6 @@
 namespace test;
 
 func main(){
-    int a = 0;
-    while(a < 6){
-        a = a + 1;
-        print(a);
+    execute(pos = ~ ~ ~){
     }
-    print(a);
 }

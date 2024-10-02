@@ -4,19 +4,20 @@ import net.querz.nbt.io.SNBTUtil
 import net.querz.nbt.tag.CompoundTag
 import top.mcfpp.command.Commands
 import top.mcfpp.mni.annotation.ConcreteOnly
-import top.mcfpp.type.MCFPPDataTemplateType
-import top.mcfpp.type.MCFPPNBTType
-import top.mcfpp.type.MCFPPType
 import top.mcfpp.model.DataTemplate
 import top.mcfpp.model.Member
 import top.mcfpp.model.field.CompoundDataField
 import top.mcfpp.model.function.Function
 import top.mcfpp.model.function.UnknownFunction
+import top.mcfpp.type.MCFPPDataTemplateType
+import top.mcfpp.type.MCFPPNBTType
+import top.mcfpp.type.MCFPPType
 import top.mcfpp.util.LogProcessor
 import top.mcfpp.util.NBTUtil
 import top.mcfpp.util.TextTranslator
 import top.mcfpp.util.TextTranslator.translate
 import java.util.*
+
 
 /**
  * 一个数据模板对象
@@ -29,7 +30,7 @@ open class DataTemplateObject : Var<DataTemplateObject> {
 
     override var type: MCFPPType
         get() = templateType.getType()
-        set(value) {}
+        set(_) {}
 
     /**
      * 创建一个模板对象
@@ -50,12 +51,11 @@ open class DataTemplateObject : Var<DataTemplateObject> {
     constructor(templateObject: DataTemplateObject) : super(templateObject) {
         templateType = templateObject.templateType
         instanceField = templateObject.instanceField
-
     }
 
-    override fun doAssign(b: Var<*>): DataTemplateObject {
+    override fun doAssignedBy(b: Var<*>): DataTemplateObject {
         when (b) {
-            is NBTBasedDataConcrete<*> -> {
+            is NBTBasedDataConcrete -> {
                 if (b.value !is CompoundTag) {
                     LogProcessor.error("Not a compound tag: ${b.value}")
                     return this
@@ -94,9 +94,28 @@ open class DataTemplateObject : Var<DataTemplateObject> {
         }
     }
 
+    override fun canAssignedBy(b: Var<*>): Boolean {
+        if(!b.implicitCast(type).isError) return true
+        return when(b){
+            is NBTBasedDataConcrete -> {
+                b.value is CompoundTag && templateType.checkCompoundStruct(b.value as CompoundTag)
+            }
+
+            is DataTemplateObjectConcrete -> {
+                b.type.objectData.canCastTo(this.templateType)
+            }
+
+            is DataTemplateObject -> {
+                true
+            }
+
+            else -> false
+        }
+    }
+
     private fun assignMembers(tag: CompoundTag){
         instanceField.forEachVar {
-            it.replacedBy(it.assign(NBTBasedDataConcrete(tag.get(it.identifier))))
+            it.replacedBy(it.assignedBy(NBTBasedDataConcrete(tag.get(it.identifier))))
         }
     }
 
@@ -123,7 +142,7 @@ open class DataTemplateObject : Var<DataTemplateObject> {
         if(!r.isError) return r
         when(type){
             MCFPPNBTType.NBT -> {
-                val re = NBTBasedData<CompoundTag>(this.identifier)
+                val re = NBTBasedData(this.identifier)
                 re.nbtPath = nbtPath
                 return re
             }
@@ -168,7 +187,7 @@ open class DataTemplateObject : Var<DataTemplateObject> {
         if(isTemp) return this
         val re = DataTemplateObject(templateType)
         re.isTemp = true
-        return re.assign(this)
+        return re.assignedBy(this)
     }
 
     override fun storeToStack() {}
@@ -176,12 +195,21 @@ open class DataTemplateObject : Var<DataTemplateObject> {
     override fun getFromStack() {}
 
     override fun getMemberVar(key: String, accessModifier: Member.AccessModifier): Pair<Var<*>?, Boolean> {
-        val member = instanceField.getVar(key)
+        val member = instanceField.getProperty(key)
         return if(member == null){
             Pair(null, true)
         }else{
+            Pair(PropertyVar(member, this), accessModifier >= member.accessModifier)
+        }
+    }
+
+    fun <T: Var<*>> getMemberVarWithT(key: String, clazz: Class<T>): T? {
+        val member = instanceField.getVar(key)
+        return if(member == null){
+            null
+        }else{
             member.parent = this
-            Pair(Accessor(member), accessModifier >= member.accessModifier)
+            return if (clazz.isAssignableFrom(member.javaClass)) clazz.cast(member) else null
         }
     }
 
@@ -253,7 +281,7 @@ open class DataTemplateObject : Var<DataTemplateObject> {
 
 class DataTemplateObjectConcrete: DataTemplateObject, MCFPPValue<CompoundTag> {
 
-    override var value: CompoundTag
+    override lateinit var value: CompoundTag
 
     /**
      * 创建一个固定的DataTemplate

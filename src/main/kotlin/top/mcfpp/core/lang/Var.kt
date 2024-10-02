@@ -6,14 +6,11 @@ import top.mcfpp.Project
 import top.mcfpp.annotations.InsertCommand
 import top.mcfpp.command.Command
 import top.mcfpp.command.Commands
-import top.mcfpp.exception.VariableConverseException
 import top.mcfpp.lib.*
 import top.mcfpp.model.*
 import top.mcfpp.model.function.Function
 import top.mcfpp.type.*
-import top.mcfpp.util.AnyTag
-import top.mcfpp.util.LogProcessor
-import top.mcfpp.util.TextTranslator
+import top.mcfpp.util.*
 import top.mcfpp.util.TextTranslator.translate
 import java.io.Serializable
 import java.util.*
@@ -43,10 +40,19 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
      */
     var identifier: String
 
+    private val stackFrameRegex = Regex("^stack_frame\\[\\d+]\$\n")
     /**
      * 变量在栈里面的位置
      */
     var stackIndex: Int = 0
+        set(value) {
+            field = value
+            for (p in nbtPath.pathList){
+                if(p is MemberPath && p.value is MCStringConcrete && stackFrameRegex.matches((p.value as MCStringConcrete).value.value)){
+                    p.value = MCStringConcrete(StringTag("stack_frame[$stackIndex]"))
+                }
+            }
+        }
 
     /**
      * 是否是静态的成员
@@ -56,7 +62,7 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
     /**
      * 这个变量是否是常量。对应const关键字
      */
-    var isConst = false
+    open var isConst = false
     var hasAssigned = false
 
     /**
@@ -77,22 +83,24 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
     open var type: MCFPPType = MCFPPBaseType.Any
 
     /**
-     * 变量是存在列表里面还是复合标签里面的
-     */
-    var inList = false
-
-    /**
      * 这个变量是否是编译器编译错误的时候生成的用于保证编译器正常运行的变量
      */
     var isError = false
 
     /**
-     *
+     * 在mc中的路径
      */
-    open var nbtPath = NBTPath(StorageSource("system"))
-        .memberIndex(Project.currNamespace)
-        .memberIndex("stack_frame[$stackIndex]")
+    open lateinit var nbtPath: NBTPath
 
+    /**
+     * 在离开作用域后是否会丢失跟踪
+     */
+    var trackLost = false
+
+    /**
+     * 此变量是否可以为空值。仅用于数据模板的成员变量
+     */
+    val nullable = false
 
     /**
      * 复制一个变量
@@ -104,9 +112,9 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
         isStatic = `var`.isStatic
         accessModifier = `var`.accessModifier
         isTemp = `var`.isTemp
+        nbtPath = `var`.nbtPath
         stackIndex = `var`.stackIndex
         isConst = `var`.isConst
-        nbtPath = `var`.nbtPath.clone()
     }
 
     /**
@@ -118,7 +126,10 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
     constructor(identifier: String = UUID.randomUUID().toString()){
         this.name = identifier
         this.identifier = identifier
-        nbtPath.memberIndex(identifier)
+        nbtPath = NBTPath(StorageSource("mcfpp:system"))
+            .memberIndex(Project.config.rootNamespace)
+            .memberIndex("stack_frame[$stackIndex]")
+            .memberIndex(identifier)
     }
 
     /**
@@ -146,13 +157,21 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
         }
     }
 
-    fun assign(b: Var<*>): Self {
+    /**
+     * 将b中的值赋值给此变量。如果b的类型和这个变量的类型不一致，会尝试进行隐式转换。赋值的实际执行过程在[doAssignedBy]中完成
+     *
+     * 此方法不会修改此变量的值。需要在其后调用[replacedBy]将原来的值覆盖
+     *
+     * @param b 变量的对象
+     */
+    fun assignedBy(b: Var<*>): Self {
         var v = b.implicitCast(this.type)
         if(v.isError){
             v = b
         }
         hasAssigned = true
-        val re = doAssign(v)
+        val re = doAssignedBy(v)
+        if(stackIndex != 0) trackLost = true
         return re
     }
 
@@ -160,8 +179,12 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
      * 将b中的值赋值给此变量
      * @param b 变量的对象
      */
-    @Throws(VariableConverseException::class)
-    protected abstract fun doAssign(b: Var<*>) : Self
+    protected abstract fun doAssignedBy(b: Var<*>) : Self
+
+    /**
+     * 判断b变量是否可以赋值给此变量
+     */
+    abstract fun canAssignedBy(b: Var<*>): Boolean
 
     /**
      * 将这个变量强制转换为一个类型
@@ -204,9 +227,9 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
             //不是this指针才需要额外指定引用者
             `var`.parent = pointer
         }
-        `var`.nbtPath = NBTPath(EntitySource(SelectorVarConcrete(EntitySelector('s'))))
+        `var`.nbtPath = NBTPath(EntitySource(SelectorVar(EntitySelector('s'))))
             .memberIndex("data")
-            .memberIndex( identifier)
+            .memberIndex(identifier)
         return `var`
     }
 
@@ -301,12 +324,12 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
             "&&" -> and(qwq)
             else -> {
                 LogProcessor.error("Unknown operation: $operation")
-                UnknownVar("error_operation_" + UUID.randomUUID().toString())
+                UnknownVar("error_operation_" + UUID.randomUUID().toString()).apply { isError = true }
             }
         }
         if(re == null){
             LogProcessor.error("Unsupported operation '$operation' between ${type.typeName} and ${a.type.typeName}")
-            return UnknownVar("${type.typeName}_$operation{a.type.typeName}" + UUID.randomUUID())
+            return UnknownVar("${type.typeName}_$operation{a.type.typeName}" + UUID.randomUUID()).apply { isError = true }
         }else{
             return re
         }
@@ -363,14 +386,12 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
      */
     open fun modular(a: Var<*>): Var<*>? = null
 
-
     /**
      * 这个数是否大于a
      * @param a 右侧值
      * @return 计算结果
      */
     open fun isBigger(a: Var<*>): Var<*>? = null
-
 
     /**
      * 这个数是否小于a
@@ -417,9 +438,8 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
     @InsertCommand
     open fun and(a: Var<*>): Var<*>? = null
 
-
-    open fun toNBTVar(): NBTBasedData<*> {
-        val n = NBTBasedData<ByteTag>()
+    open fun toNBTVar(): NBTBasedData {
+        val n = NBTBasedData()
         n.name = name
         n.identifier = identifier
         n.isStatic = isStatic
@@ -427,7 +447,7 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
         n.isTemp = isTemp
         n.stackIndex = stackIndex
         n.isConst = isConst
-        n.nbtPath = nbtPath
+        n.nbtPath = nbtPath.clone()
         return n
     }
 
@@ -444,10 +464,6 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
 
     override fun getAccess(function: Function): Member.AccessModifier {
         return Member.AccessModifier.PUBLIC
-    }
-
-    fun assignMemberVar(member: String, b: Var<*>) {
-        getMemberVar(member, Member.AccessModifier.PUBLIC).first?.assign(b)
     }
 
     override fun toString(): String {
@@ -479,9 +495,6 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
     }
 
     fun replacedBy(v : Var<*>){
-        if(v is Accessor){
-            return replacedBy(v.value)
-        }
         if(v == this) return
         if(v is MCInt && this is MCInt && holder != null){
             when(val holder = holder){
@@ -553,17 +566,11 @@ abstract class Var<Self: Var<Self>> : Member, Cloneable, CanSelectMember, Serial
                 }
             }
         }
-
         fun buildCastErrorVar(type: MCFPPType): Var<*>{
             val qwq = type.build("error_cast_" + UUID.randomUUID().toString(), Function.currFunction)
             qwq.isError = true
             return qwq
         }
 
-        fun buildOpErrorVar(identifier: String): Var<*>{
-            val qwq = UnknownVar(identifier + UUID.randomUUID().toString())
-            qwq.isError = true
-            return qwq
-        }
     }
 }

@@ -6,11 +6,9 @@ import top.mcfpp.model.function.Function
 import top.mcfpp.model.Member
 import top.mcfpp.model.function.UnknownFunction
 
-class UnknownVar : Var<UnknownVar> {
+class UnknownVar(identifier: String) : Var<UnknownVar>(identifier) {
 
-    constructor(identifier: String):super(identifier)
-
-    override fun doAssign(b: Var<*>) : UnknownVar {
+    override fun doAssignedBy(b: Var<*>) : UnknownVar {
         hasAssigned = true
         return this
     }
@@ -18,6 +16,8 @@ class UnknownVar : Var<UnknownVar> {
     override fun explicitCast(type: MCFPPType): Var<*> = type.build(identifier, Function.currFunction)
 
     override fun implicitCast(type: MCFPPType): Var<*> = type.build(identifier, Function.currFunction)
+
+    override fun canAssignedBy(b: Var<*>): Boolean = true
 
     override fun clone(): UnknownVar = this
 
@@ -40,7 +40,7 @@ class UnknownVar : Var<UnknownVar> {
         return UnknownFunction("unknown") to true
     }
 
-    override fun toNBTVar(): NBTBasedData<*> {
+    override fun toNBTVar(): NBTBasedData {
         return NBTBasedDataConcrete(StringTag("unknown"),"unknown")
     }
 
